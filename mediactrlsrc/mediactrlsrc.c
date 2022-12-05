@@ -43,6 +43,7 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <pthread.h>
+#include "log.h"
 
 #include "mediactl.h"
 #include "v4l2subdev.h"
@@ -53,12 +54,17 @@
 
 // #define PRINT_FPS
 
-#define DEFAULT_SERVER_SOCKET "/tmp/aml-isp.socket"
+#define DEFAULT_SERVER_SOCKET0 "/tmp/aml-isp-media0.socket"
+#define DEFAULT_SERVER_SOCKET1 "/tmp/aml-isp-media1.socket"
 #define DEFAULT_MEDIA_DEVICE_NAME "/dev/media0"
 static int connected_sockfd = -1;
 
 static char *media_device_name = DEFAULT_MEDIA_DEVICE_NAME;
+static char *server_socket = DEFAULT_SERVER_SOCKET0;
 static struct media_device *media_dev = NULL;
+static int camera_num = 1;
+
+
 
 typedef struct pipeline_info {
   /* sub device name */
@@ -200,13 +206,13 @@ static int check_capability(struct media_entity *entity) {
   memset (&v4l2_cap, 0, sizeof (struct v4l2_capability));
   int ret = v4l2_video_get_capability(entity, &v4l2_cap);
   if (ret < 0) {
-    printf("get entity[%s] -> video[%s] capability failed\n",
+    log_error("get entity[%s] -> video[%s] capability failed",
       entity->info.name,
       entity->devname);
     return -1;
   }
 
-  printf("entity[%s] -> video[%s], cap.driver:%s, capabilities:0x%x, device_caps:0x%x\n",
+  log_debug("entity[%s] -> video[%s], cap.driver:%s, capabilities:0x%x, device_caps:0x%x",
     entity->info.name,
     entity->devname,
     v4l2_cap.driver,
@@ -214,6 +220,36 @@ static int check_capability(struct media_entity *entity) {
     v4l2_cap.device_caps);
 
   return 0;
+}
+
+static int media_set_wdr_mode(media_stream_t *stream, uint32_t wdr_mode) {
+  int ret = -1;
+
+  /* sensor wdr mode */
+  if (wdr_mode != ISP_SDR_DCAM_MODE) {
+    ret = v4l2_subdev_set_wdr(stream->sensor.entity, wdr_mode);
+    if (ret < 0) {
+      log_error("set sensor wdr mode failed");
+      return ret;
+    }
+  }
+
+  /* isp-adapter wdr mode */
+  ret = v4l2_subdev_set_wdr(stream->isp_adapter.entity, wdr_mode);
+  if (ret < 0) {
+    log_error("set isp-adapter wdr mode failed");
+    return ret;
+  }
+
+  /* isp-core wdr mode */
+  ret = v4l2_subdev_set_wdr(stream->isp_core.entity, wdr_mode);
+  if (ret < 0) {
+    log_error("set isp-core wdr mode failed");
+    return ret;
+  }
+
+  log_debug("set wdr mode successfully");
+  return ret;
 }
 
 static int media_stream_init(struct media_device *media_dev,
@@ -249,7 +285,20 @@ static int media_stream_init(struct media_device *media_dev,
   stream->video_statistics.entity = media_get_entity_by_name(media_dev,
     stream->video_statistics.entity_name, strlen(stream->video_statistics.entity_name));
   stream->video_param.entity = media_get_entity_by_name(media_dev,
-    stream->video_param.entity_name, strlen(stream->video_param.entity_name));
+  stream->video_param.entity_name, strlen(stream->video_param.entity_name));
+
+  if (1 == camera_num) {
+    tparam.fmt_code = MEDIA_BUS_FMT_SRGGB12_1X12;
+    tparam.wdr_mode = WDR_MODE_NONE;
+  } else if (2 == camera_num) {
+    tparam.fmt_code = MEDIA_BUS_FMT_SRGGB12_1X12;
+    tparam.wdr_mode = ISP_SDR_DCAM_MODE;
+  } else {
+    log_error("only support 1 or 2 camera");
+    return 0;
+  }
+  /* set wdr mode */
+  media_set_wdr_mode(stream, tparam.wdr_mode);
 
   /* TODO */
 
@@ -275,7 +324,7 @@ static int set_subdev_pad_format(media_stream_t *stream,
   ret = v4l2_subdev_set_format(stream->sensor.entity,
     &mbus_format, 0, which);
   if (ret < 0) {
-    printf("set subdev sensor pad[0] format failed\n");
+    log_error("set subdev sensor pad[0] format failed");
     return ret;
   }
   cmos_set_sensor_entity(stream->sensor.entity, 0);
@@ -284,13 +333,13 @@ static int set_subdev_pad_format(media_stream_t *stream,
   ret = v4l2_subdev_set_format(stream->isp_csiphy.entity,
     &mbus_format, 0, which);
   if (ret < 0) {
-    printf("set subdev isp-ciphy pad[0] format failed\n");
+    log_error("set subdev isp-ciphy pad[0] format failed");
     return ret;
   }
   ret = v4l2_subdev_set_format(stream->isp_csiphy.entity,
     &mbus_format, 1, which);
   if (ret < 0) {
-    printf("set subdev isp-ciphy pad[1] format failed\n");
+    log_error("set subdev isp-ciphy pad[1] format failed");
     return ret;
   }
 
@@ -298,13 +347,13 @@ static int set_subdev_pad_format(media_stream_t *stream,
   ret = v4l2_subdev_set_format(stream->isp_adapter.entity,
     &mbus_format, 0, which);
   if (ret < 0) {
-    printf("set subdev isp-adapter pad[0] format failed\n");
+    log_error("set subdev isp-adapter pad[0] format failed");
     return ret;
   }
   ret = v4l2_subdev_set_format(stream->isp_adapter.entity,
     &mbus_format, 1, which);
   if (ret < 0) {
-    printf("set subdev isp-adapter pad[1] format failed\n");
+    log_error("set subdev isp-adapter pad[1] format failed");
     return ret;
   }
 
@@ -312,7 +361,7 @@ static int set_subdev_pad_format(media_stream_t *stream,
   ret = v4l2_subdev_set_format(stream->isp_core.entity,
     &mbus_format, 0, which);
   if (ret < 0) {
-    printf("set subdev isp-core pad[0] format failed\n");
+    log_error("set subdev isp-core pad[0] format failed");
     return ret;
   }
 
@@ -336,55 +385,55 @@ static int link_and_activate_subdev(media_stream_t *stream) {
   /* source pad[0] sensor --> sink pad[0] isp-csiphy */
   source_pad = (struct media_pad*)media_entity_get_pad(stream->sensor.entity, SENSOR_SOURCE_PAD_INDEX);
   if (!source_pad) {
-    printf("get sensor source pad[0] failed\n");
+    log_error("get sensor source pad[0] failed");
     return -1;
   }
   sink_pad = (struct media_pad*)media_entity_get_pad(stream->isp_csiphy.entity, SINK_PAD_INDEX);
   if (!sink_pad) {
-    printf("get isp-csiphy sink pad[0] failed\n");
+    log_error("get isp-csiphy sink pad[0] failed");
     return -1;
   }
   ret = media_setup_link(media_dev, source_pad, sink_pad, flag);
   if (ret != 0) {
-    printf("link sensor to isp-csiphy failed\n");
+    log_error("link sensor to isp-csiphy failed");
     return ret;
   }
 
   /* source pad[1] isp-csiphy --> sink pad[0] isp-adapter */
   source_pad = (struct media_pad*)media_entity_get_pad(stream->isp_csiphy.entity, SOURCE_PAD_INDEX);
   if (!source_pad) {
-    printf("get isp-csiphy source pad[1] failed\n");
+    log_error("get isp-csiphy source pad[1] failed");
     return -1;
   }
   sink_pad = (struct media_pad*)media_entity_get_pad(stream->isp_adapter.entity, SINK_PAD_INDEX);
   if (!sink_pad) {
-    printf("get isp-adapter sink pad[0] failed\n");
+    log_error("get isp-adapter sink pad[0] failed");
     return -1;
   }
   ret = media_setup_link(media_dev, source_pad, sink_pad, flag);
   if (ret != 0) {
-    printf("link isp-csiphy to isp-adapter failed\n");
+    log_error("link isp-csiphy to isp-adapter failed");
     return ret;
   }
 
   /* source pad[1] isp-adapter --> sink pad[0] isp-core */
   source_pad = (struct media_pad*)media_entity_get_pad(stream->isp_adapter.entity, SOURCE_PAD_INDEX);
   if (!source_pad) {
-    printf("get isp-adapter source pad[1] failed\n");
+    log_error("get isp-adapter source pad[1] failed");
     return -1;
   }
   sink_pad = (struct media_pad*)media_entity_get_pad(stream->isp_core.entity, SINK_PAD_INDEX);
   if (!sink_pad) {
-    printf("get isp-core sink pad[0] failed\n");
+    log_error("get isp-core sink pad[0] failed");
     return -1;
   }
   ret = media_setup_link(media_dev, source_pad, sink_pad, flag);
   if (ret != 0) {
-    printf("link isp-adapter to isp-core failed\n");
+    log_error("link isp-adapter to isp-core failed");
     return ret;
   }
 
-  printf("link and activate subdev successfully\n");
+  log_debug("link and activate subdev successfully");
 
   return ret;
 }
@@ -401,22 +450,22 @@ int media_stream_config(media_stream_t *stream) {
   cfg.format.width = 3840;
   cfg.format.height = 2160;
   cfg.format.fourcc = V4L2_PIX_FMT_NV12;
-  cfg.format.code = MEDIA_BUS_FMT_SBGGR10_1X10;
+  cfg.format.code = tparam.fmt_code;;
   cfg.format.nplanes = 1;
 
   ret = set_subdev_pad_format(stream, &cfg);
   if (ret < 0) {
-    printf("set subdev format failed\n");
+    log_error("set subdev format failed");
     return ret;
   }
 
   ret = link_and_activate_subdev(stream);
   if (ret < 0) {
-    printf("link and activate subdev failed\n");
+    log_error("link and activate subdev failed");
     return ret;
   }
 
-  printf("config media stream successfully\n");
+  log_debug("config media stream successfully");
 
   return ret;
 }
@@ -441,7 +490,7 @@ static int set_isp_stats_fmt(media_stream_t *stream,
 
   ret = v4l2_video_set_format(stream->video_statistics.entity, &v4l2_fmt);
   if (ret < 0) {
-    printf("set isp-stats fmt failed, ret:%d\n", ret);
+    log_error("set isp-stats fmt failed, ret:%d", ret);
     return ret;
   }
 
@@ -466,7 +515,7 @@ static int set_isp_param_fmt(media_stream_t *stream,
 
   ret = v4l2_video_set_format(stream->video_statistics.entity, &v4l2_fmt);
   if (ret < 0) {
-    printf("set isp-stats fmt failed, ret:%d\n", ret);
+    log_error("set isp-stats fmt failed, ret:%d", ret);
     return ret;
   }
 
@@ -501,7 +550,7 @@ static void isp_alg_param_init() {
   v4l2_rb.memory = V4L2_MEMORY_MMAP;
   ret = v4l2_video_req_bufs(v4l2_media_stream.video_statistics.entity, &v4l2_rb);
   if (ret < 0) {
-    printf("isp-stats request buffer error\n");
+    log_error("isp-stats request buffer error");
     return;
   }
   memset (&v4l2_rb, 0, sizeof (struct v4l2_requestbuffers));
@@ -510,7 +559,7 @@ static void isp_alg_param_init() {
   v4l2_rb.memory = V4L2_MEMORY_MMAP;
   ret = v4l2_video_req_bufs(v4l2_media_stream.video_param.entity, &v4l2_rb);
   if (ret < 0) {
-    printf("isp-param request buffer error\n");
+    log_error("isp-param request buffer error");
     return;
   }
 
@@ -524,17 +573,17 @@ static void isp_alg_param_init() {
     v4l2_buf.memory = V4L2_MEMORY_MMAP;
     ret = v4l2_video_query_buf(v4l2_media_stream.video_statistics.entity, &v4l2_buf);
     if (ret < 0) {
-      printf("isp-stats query buffer error, ret: %d\n", ret);
+      log_error("isp-stats query buffer error, ret: %d", ret);
       return;
     }
     if (v4l2_buf.type == V4L2_BUF_TYPE_VIDEO_CAPTURE) {
       tparam.buffer_isp_stats[i].length = v4l2_buf.length;
-      printf("isp stats query buffer, length: %u, offset: %d\n",
+      log_debug("isp stats query buffer, length: %u, offset: %d",
         v4l2_buf.length, v4l2_buf.m.offset);
       tparam.buffer_isp_stats[i].pstart = mmap (NULL, v4l2_buf.length,
         PROT_READ | PROT_WRITE, MAP_SHARED, v4l2_media_stream.video_statistics.entity->fd, v4l2_buf.m.offset);
       if (tparam.buffer_isp_stats[i].pstart == MAP_FAILED) {
-        printf("isp stats map buffer error\n");
+        log_error("isp stats map buffer error");
         return;
       }
     }
@@ -546,17 +595,17 @@ static void isp_alg_param_init() {
   v4l2_buf.memory = V4L2_MEMORY_MMAP;
   ret = v4l2_video_query_buf(v4l2_media_stream.video_param.entity, &v4l2_buf);
   if (ret < 0) {
-    printf("isp-param query buffer error, ret: %d\n", ret);
+    log_error("isp-param query buffer error, ret: %d", ret);
     return;
   }
   if (v4l2_buf.type == V4L2_BUF_TYPE_VIDEO_CAPTURE) {
     tparam.buffer_isp_param.length = v4l2_buf.length;
-    printf("isp param query buffer, length: %u, offset: %d\n",
+    log_debug("isp param query buffer, length: %u, offset: %d",
       v4l2_buf.length, v4l2_buf.m.offset);
     tparam.buffer_isp_param.pstart = mmap (NULL, v4l2_buf.length,
       PROT_READ | PROT_WRITE, MAP_SHARED, v4l2_media_stream.video_param.entity->fd, v4l2_buf.m.offset);
     if (tparam.buffer_isp_param.pstart == MAP_FAILED) {
-      printf("isp stats map buffer error\n");
+      log_error("isp stats map buffer error");
       return;
     }
   }
@@ -580,7 +629,7 @@ static void isp_alg_param_init() {
     v4l2_buf.memory  = V4L2_MEMORY_MMAP;
     ret = v4l2_video_q_buf(v4l2_media_stream.video_statistics.entity, &v4l2_buf);
     if (ret < 0) {
-      printf("isp-stats first queue buffer error, ret: %d, index:  %d\n", ret, i);
+      log_error("isp-stats first queue buffer error, ret: %d, index:  %d", ret, i);
       return;
     }
   }
@@ -590,7 +639,7 @@ static void isp_alg_param_init() {
   v4l2_buf.memory = V4L2_MEMORY_MMAP;
   ret = v4l2_video_q_buf(v4l2_media_stream.video_param.entity, &v4l2_buf);
   if (ret < 0) {
-    printf("isp-param first queue buffer error, ret: %d\n", ret);
+    log_error("isp-param first queue buffer error, ret: %d", ret);
     return;
   }
 
@@ -598,17 +647,17 @@ static void isp_alg_param_init() {
   ret = v4l2_video_stream_on(v4l2_media_stream.video_statistics.entity,
     V4L2_BUF_TYPE_VIDEO_CAPTURE);
   if (ret < 0) {
-    printf("isp-stats streamon error, ret: %d\n", ret);
+    log_error("isp-stats streamon error, ret: %d", ret);
     return;
   }
   ret = v4l2_video_stream_on(v4l2_media_stream.video_param.entity,
     V4L2_BUF_TYPE_VIDEO_CAPTURE);
   if (ret < 0) {
-    printf("isp-stats streamon error, ret: %d\n", ret);
+    log_error("isp-stats streamon error, ret: %d", ret);
     return;
   }
 
-  printf("[isp_alg_param_init] Finish initializing amlgorithm parameter ...\n");
+  log_debug("Finish initializing amlgorithm parameter ...");
 }
 
 #ifdef PRINT_FPS
@@ -640,7 +689,7 @@ int check_fd(int fd, int timeout_us) {
     FD_SET(fd, &rfds);
     int retval = select(fd + 1, &rfds, NULL, NULL, ptv);
     if (retval <= 0) {
-      printf("select fail %d, %d %s\n", retval, errno, strerror(errno));
+      log_error("select fail %d, %d %s", retval, errno, strerror(errno));
       return -1;
     }
     if (fd > 0 && FD_ISSET(fd, &rfds)) {
@@ -670,7 +719,7 @@ static void isp_alg_process_one(struct thread_param *tparam) {
     &v4l2_buf_video_statistics
   );
   if (ret < 0) {
-    printf("[isp_alg_process_one] dequeue video statistics buffer failed\n");
+    log_error("dequeue video statistics buffer failed");
     return;
   }
 
@@ -682,7 +731,7 @@ static void isp_alg_process_one(struct thread_param *tparam) {
     &v4l2_buf_video_param
   );
   if (ret < 0) {
-    printf("[isp_alg_process_one] dequeue video param buffer failed\n");
+    log_error("dequeue video param buffer failed");
     v4l2_video_q_buf(
       v4l2_media_stream.video_statistics.entity,
       &v4l2_buf_video_statistics
@@ -705,7 +754,7 @@ static void isp_alg_process_one(struct thread_param *tparam) {
     &v4l2_buf_video_statistics
   );
   if (ret < 0) {
-    printf("[isp_alg_process_one] queue video statistics buffer failed\n");
+    log_error("queue video statistics buffer failed");
     return;
   }
   ret = v4l2_video_q_buf(
@@ -713,11 +762,11 @@ static void isp_alg_process_one(struct thread_param *tparam) {
     &v4l2_buf_video_param
   );
   if (ret < 0) {
-    printf("[isp_alg_thread] queue video param buffer failed\n");
+    log_error("queue video param buffer failed");
     return;
   }
 
-  printf("[isp_alg_process_one] process one frame successfully\n");
+  log_debug("process one frame successfully");
   return;
 }
 
@@ -767,13 +816,13 @@ static void *isp_alg_thread(void *arg) {
       /* print fps info every 100 frames */
       if ((frame_count % 100 == 0)) {
         end = get_current_time_msec();
-        printf("[isp_alg_thread] fps: %ld\n",
+        log_debug("fps: %ld",
           (100 * 1000) / (end - start));
       }
       start = get_current_time_msec();
 #endif
     } else {
-      printf("[isp_alg_thread] streamoff ...\n");
+      log_debug("streamoff ...");
       break;
     }
   }
@@ -795,7 +844,7 @@ static void *isp_alg_thread(void *arg) {
   munmap(tparam->buffer_isp_param.pstart,
     tparam->buffer_isp_param.length);
 
-  printf("isp_alg_thread exit\n");
+  log_debug("exit");
   return NULL;
 }
 
@@ -808,7 +857,7 @@ static void *process_socket_thread(void *arg) {
     if (check_fd(connected_sockfd, 0) == 0) {
       r = TEMP_FAILURE_RETRY(recv(connected_sockfd, recv_buffer, sizeof(recv_buffer), 0));
       if (r == 0) {
-        printf("connection interrupted\n");
+        log_debug("connection interrupted");
         continue;
       }
       if (strcmp("streamon", recv_buffer) == 0) {
@@ -816,15 +865,15 @@ static void *process_socket_thread(void *arg) {
         tparam->streaming = true;
         pthread_mutex_unlock(&tparam->mutex);
         pthread_cond_signal(&tparam->cond);
-        printf("[process_socket_thread] receive streamon notification\n");
+        log_debug("receive streamon notification");
       } else if (strcmp("streamoff", recv_buffer) == 0) {
         pthread_mutex_lock(&tparam->mutex);
         tparam->streaming = false;
         pthread_mutex_unlock(&tparam->mutex);
-        printf("[process_socket_thread] receive streamoff notification\n");
+        log_debug("receive streamoff notification");
         break;
       } else {
-        printf("[process_socket_thread] not supported message ...\n");
+        log_warn("not supported message ...");
         continue;
       }
     }
@@ -835,13 +884,19 @@ static void *process_socket_thread(void *arg) {
 
 static void parse_opt(int argc, char *argv[]) {
   int opt;
-  while ((opt = getopt(argc, argv, "m:n:")) != -1) {
+  while ((opt = getopt(argc, argv, "m:c:t:")) != -1) {
     switch (opt) {
-      case 'm':
+      case 'm': /* media device name (/dev/media0) */
         media_device_name = optarg;
-        printf("media device name: %s\n", media_device_name);
+        if (strstr(media_device_name, "media0")) {
+          server_socket = DEFAULT_SERVER_SOCKET0;
+        } else if (strstr(media_device_name, "media1")) {
+          server_socket = DEFAULT_SERVER_SOCKET1;
+        }
+        log_debug("media device name: %s", media_device_name);
         break;
-      case 'n':
+      case 'c': /* camera number (0,1) */
+        camera_num = atoi(optarg);
         break;
       case 't':
         break;
@@ -863,11 +918,11 @@ int main(int argc, char *argv[]) {
    **/
   media_dev = media_device_new(media_device_name);
   if (NULL == media_dev) {
-    printf("new media device error\n");
+    log_debug("new media device error");
     return -1;
   }
   if (0 != media_device_enumerate(media_dev)) {
-    printf("media device enumerate failed");
+    log_error("media device enumerate failed");
     return -1;
   }
   media_stream_init(media_dev, &v4l2_media_stream, &p_info);
@@ -884,61 +939,61 @@ int main(int argc, char *argv[]) {
   int listen_fd, connfd, size;
 
   if ((listen_fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
-    perror("socket error");
+    log_error("socket error");
     exit(1);
   }
 
   memset(&server_unix, 0, sizeof(server_unix));
   server_unix.sun_family = AF_UNIX;
-  strcpy(server_unix.sun_path, DEFAULT_SERVER_SOCKET);
+  strcpy(server_unix.sun_path, server_socket);
   size = offsetof(struct sockaddr_un, sun_path) + strlen(server_unix.sun_path);
-  unlink(DEFAULT_SERVER_SOCKET);
+  unlink(server_socket);
   if (bind(listen_fd, (struct sockaddr *)&server_unix, size) < 0) {
-    perror("bind error");
+    log_error("bind error");
     exit(1);
   }
-  printf("UNIX domain socket bound\n");
+  log_debug("UNIX domain socket bound");
 
   if (listen(listen_fd, 16) < 0) {
-    perror("listen error");
+    log_error("listen error");
     exit(1);
   }
-  printf("Accepting connections ...\n");
+  log_debug("Accepting connections ...");
 
   client_unix_len = sizeof(client_unix);
   if ((connfd = accept(listen_fd, (struct sockaddr *)&client_unix, &client_unix_len)) < 0) {
-    perror("accept error");
+    log_error("accept error");
     return -1;
   }
   connected_sockfd = connfd;
-  printf("connected_sockfd: %d\n", connected_sockfd);
+  log_debug("connected_sockfd: %d", connected_sockfd);
 
   char video_dev_name[32] = {0};
   strcpy(video_dev_name, v4l2_media_stream.video_out.entity->devname);
-  printf("[mediactrlsrc]video_dev_name: %s\n", video_dev_name);
+  log_debug("video_dev_name: %s", video_dev_name);
   int r = TEMP_FAILURE_RETRY(send(connected_sockfd, video_dev_name, strlen(video_dev_name), 0));
   if (r < 0) {
-    printf("send video_dev_name, failed\n");
+    log_error("send video_dev_name, failed");
   }
 
   int err;
   err = pthread_create(&tparam.process_socket_tid, NULL, &process_socket_thread, &tparam);
   if (err != 0) {
-    fprintf(stderr, "can't create process_socket_thread: %s\n", strerror(err));
+    log_error("can't create process_socket_thread");
     exit(1);
   }
   err = pthread_create(&tid[MEDIACTRLSRC_STREAM_STATISTICS], NULL, &isp_alg_thread, &tparam);
   if (err != 0) {
-    fprintf(stderr, "can't create isp_alg_thread: %s\n", strerror(err));
+    log_error("can't create isp_alg_thread");
     exit(1);
   }
 
   pthread_join(tparam.process_socket_tid, NULL);
   pthread_join(tid[MEDIACTRLSRC_STREAM_STATISTICS], NULL);
 
-  unlink(DEFAULT_SERVER_SOCKET);
+  unlink(server_socket);
   close(connected_sockfd);
   close(listen_fd);
-  printf("mediactrlsrc exit\n");
+  log_debug("mediactrlsrc exit");
   return 0;
 }

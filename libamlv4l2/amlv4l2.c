@@ -46,8 +46,10 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#define DEFAULT_SERVER_SOCKET "/tmp/aml-isp.socket"
+#define DEFAULT_SERVER_SOCKET0 "/tmp/aml-isp-media0.socket"
+#define DEFAULT_SERVER_SOCKET1 "/tmp/aml-isp-media1.socket"
 
+static char *server_socket = DEFAULT_SERVER_SOCKET0;
 static int client_sockfd = -1;
 static char vdevname_buffer[32] = {0};
 
@@ -61,7 +63,7 @@ static void get_valid_video_device_name(void) {
 
   memset(&server_unix, 0, sizeof(server_unix));
   server_unix.sun_family = AF_UNIX;
-  strcpy(server_unix.sun_path, DEFAULT_SERVER_SOCKET);
+  strcpy(server_unix.sun_path, server_socket);
   int len = offsetof(struct sockaddr_un, sun_path) + strlen(server_unix.sun_path);
   if (connect(client_sockfd, (struct sockaddr *)&server_unix, len) < 0) {
     perror("connect error");
@@ -76,8 +78,17 @@ static void get_valid_video_device_name(void) {
 }
 
 char *amlv4l2_obtain_devname(const char *pathname) {
-  if (!access(DEFAULT_SERVER_SOCKET, F_OK)) {
-    unlink(DEFAULT_SERVER_SOCKET);
+  if (strstr(pathname, "media0")) {
+    server_socket = DEFAULT_SERVER_SOCKET0;
+  } else if (strstr(pathname, "media1")) {
+    server_socket = DEFAULT_SERVER_SOCKET1;
+  } else {
+    printf("not supported media device name ...\n");
+    return NULL;
+  }
+
+  if (!access(server_socket, F_OK)) {
+    unlink(server_socket);
   }
 
   pid_t pid;
@@ -89,11 +100,11 @@ char *amlv4l2_obtain_devname(const char *pathname) {
   if (pid == 0) {
     prctl(PR_SET_PDEATHSIG, SIGKILL);
     /* call execl to startup aml-isp-demo */
-    execl("/usr/bin/mediactrlsrc", "mediactrlsrc", "-m", pathname, NULL);
+    execl("/usr/bin/mediactrlsrc", "mediactrlsrc", "-m", pathname, "-c", "2", NULL);
   }
 
   while (true) {
-    if (!access(DEFAULT_SERVER_SOCKET, F_OK))
+    if (!access(server_socket, F_OK))
       break;
     else
       continue;
