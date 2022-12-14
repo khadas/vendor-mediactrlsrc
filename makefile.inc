@@ -7,6 +7,7 @@ OBJS = $(patsubst %.c,$(OBJDIR)/%.o,$(SRCS))
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
+	@echo " [OBJS] $(OBJS)"
 	@echo " [LINK] $@"
 	@$(CC) $(LDFLAGS) $+ $(LDLIBS) -o $@
 

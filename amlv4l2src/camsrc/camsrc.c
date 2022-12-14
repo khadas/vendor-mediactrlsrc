@@ -4,7 +4,7 @@
  * This source code is subject to the terms and conditions defined in below
  * which is part of this source code package.
  *
- * Description: Amlv4l2 Library
+ * Description: Camsrc: Amlsrc Implementation
  */
 
 // Copyright (C) 2019 Amlogic, Inc. All rights reserved.
@@ -31,7 +31,6 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -39,52 +38,27 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/prctl.h>
-#include <sys/socket.h>
-#include <sys/un.h>
-#include <errno.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <string.h>
 
-#define DEFAULT_SERVER_SOCKET0 "/tmp/aml-isp-media0.socket"
-#define DEFAULT_SERVER_SOCKET1 "/tmp/aml-isp-media1.socket"
+#include "common.h"
+#include "log.h"
 
 static char *server_socket = DEFAULT_SERVER_SOCKET0;
 static int client_sockfd = -1;
 static char vdevname_buffer[32] = {0};
 
-static void get_valid_video_device_name(void) {
-  struct  sockaddr_un server_unix;
-
-  if ((client_sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
-    perror("client socket error");
-    exit(1);
-  }
-
-  memset(&server_unix, 0, sizeof(server_unix));
-  server_unix.sun_family = AF_UNIX;
-  strcpy(server_unix.sun_path, server_socket);
-  int len = offsetof(struct sockaddr_un, sun_path) + strlen(server_unix.sun_path);
-  if (connect(client_sockfd, (struct sockaddr *)&server_unix, len) < 0) {
-    perror("connect error");
-    exit(1);
-  }
-
-  int r = TEMP_FAILURE_RETRY(recv(client_sockfd, vdevname_buffer, sizeof(vdevname_buffer), 0));
-  if (r < 0) {
-    printf("recv video device name failed\n");
-    return;
-  }
-}
-
-char *amlv4l2_obtain_devname(const char *pathname) {
-  if (strstr(pathname, "media0")) {
+static void
+cam_src_obtain_devname(const char *filepath) {
+  if (strstr(filepath, "media0")) {
     server_socket = DEFAULT_SERVER_SOCKET0;
-  } else if (strstr(pathname, "media1")) {
+  } else if (strstr(filepath, "media1")) {
     server_socket = DEFAULT_SERVER_SOCKET1;
   } else {
-    printf("not supported media device name ...\n");
-    return NULL;
+    log_debug("not supported media device name ...");
+    return;
   }
 
   if (!access(server_socket, F_OK)) {
@@ -94,13 +68,13 @@ char *amlv4l2_obtain_devname(const char *pathname) {
   pid_t pid;
   pid = fork();
   if (pid < 0) {
-    printf("fork error\n");
+    log_debug("fork error");
     exit(1);
   }
   if (pid == 0) {
     prctl(PR_SET_PDEATHSIG, SIGKILL);
-    /* call execl to startup aml-isp-demo */
-    execl("/usr/bin/mediactrlsrc", "mediactrlsrc", "-m", pathname, "-c", "2", NULL);
+    /* call execl to startup camctrl */
+    execl("/usr/bin/camctrl", "camctrl", "-m", filepath, "-c", "2", NULL);
   }
 
   while (true) {
@@ -110,35 +84,47 @@ char *amlv4l2_obtain_devname(const char *pathname) {
       continue;
   }
 
-  get_valid_video_device_name();
+  /* temporarily */
+  usleep(200000);
+
+  client_sockfd = udp_sock_create(server_socket);
+  udp_sock_recv(
+    client_sockfd,
+    vdevname_buffer,
+    sizeof(vdevname_buffer)
+  );
+}
+
+char *
+cam_src_initialize(const char* filepath) {
+  cam_src_obtain_devname(filepath);
+
+  log_debug("obtain devname: %s", vdevname_buffer);
 
   return vdevname_buffer;
 }
 
-void amlv4l2_close() {
-  if (client_sockfd)
-    close(client_sockfd);
+void
+cam_src_finalize() {
+  log_debug("finalize");
+  return;
 }
 
-void amlv4l2_notify_streamon() {
-  if (client_sockfd) {
-    char send_buffer[32] = {0};
-    strcpy(send_buffer, "streamon");
-    int r = TEMP_FAILURE_RETRY(send(client_sockfd, &send_buffer, sizeof(send_buffer), 0));
-    if (r < 0) {
-        printf("send streamon notification failed\n");
-    }
-  }
+void
+cam_src_start() {
+  char send_buffer[32] = {0};
+  strcpy(send_buffer, "streamon");
+  udp_sock_send(client_sockfd, send_buffer, sizeof(send_buffer));
+  log_debug("start ...");
+  return;
 }
 
-void amlv4l2_notify_streamoff() {
-  if (client_sockfd) {
-    char send_buffer[32] = {0};
-    strcpy(send_buffer, "streamoff");
-    int r = TEMP_FAILURE_RETRY(send(client_sockfd, &send_buffer, sizeof(send_buffer), 0));
-    if (r < 0) {
-        printf("send streamoff notification failed\n");
-    }
-  }
+void
+cam_src_stop() {
+  char recv_buffer[32] = {0};
+  strcpy(recv_buffer, "streamoff");
+  udp_sock_send(client_sockfd, recv_buffer, sizeof(recv_buffer));
+  log_debug("stop ...");
+  return;
 }
 

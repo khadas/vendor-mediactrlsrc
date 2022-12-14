@@ -43,88 +43,35 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <pthread.h>
+#include <dlfcn.h>
+#include "common.h"
 #include "log.h"
 
 #include "mediactl.h"
 #include "v4l2subdev.h"
 #include "v4l2videodev.h"
+#include "mediaApi.h"
 
-#include "aml_isp_api.h"
-#include "imx290_api.h"
+#include "staticPipe.h"
+#include "ispMgr.h"
 
 // #define PRINT_FPS
 
-#define DEFAULT_SERVER_SOCKET0 "/tmp/aml-isp-media0.socket"
-#define DEFAULT_SERVER_SOCKET1 "/tmp/aml-isp-media1.socket"
-#define DEFAULT_MEDIA_DEVICE_NAME "/dev/media0"
 static int connected_sockfd = -1;
 
-static char *media_device_name = DEFAULT_MEDIA_DEVICE_NAME;
+static char *media_device_name = NULL;
 static char *server_socket = DEFAULT_SERVER_SOCKET0;
 static struct media_device *media_dev = NULL;
 static int camera_num = 1;
 
-
-
-typedef struct pipeline_info {
-  /* sub device name */
-  char *sensor_entity_name;
-  char *isp_csiphy_entity_name;
-  char *isp_adapter_entity_name;
-  char *isp_core_entity_name;
-
-  /* video device name */
-  char *video_out_entity_name;
-  char *video_statistics_entity_name;
-  char *video_param_entity_name;
-} pipeline_info_t;
-
-
-static pipeline_info_t p_info = {
-  .sensor_entity_name = "imx290-0",
-  .isp_csiphy_entity_name = "isp-csiphy",
-  .isp_adapter_entity_name = "isp-adapter",
-  .isp_core_entity_name = "isp-core",
-  .video_out_entity_name = "isp-output0",
-  .video_statistics_entity_name = "isp-stats",
-  .video_param_entity_name = "isp-param",
-};
-
-typedef struct entity_info {
-  char entity_name[32];
-  struct media_entity *entity;
-} entity_info_t;
-
-typedef struct media_stream {
-  entity_info_t sensor;
-  entity_info_t isp_csiphy;
-  entity_info_t isp_adapter;
-  entity_info_t isp_core;
-  entity_info_t video_out;
-  entity_info_t video_statistics;
-  entity_info_t video_param;
-} media_stream_t;
-
+/* media stream */
 media_stream_t v4l2_media_stream;
 
-
 //#define WDR_ENABLE
-enum AML_WDR_MODE {
-  WDR_MODE_NONE,
-  WDR_MODE_2To1_LINE,
-  WDR_MODE_2To1_FRAME,
-  SDR_DDR_MODE,
-  ISP_SDR_DCAM_MODE,
-};
-
 #define V4L2_META_AML_ISP_CONFIG    v4l2_fourcc('A', 'C', 'F', 'G') /* Aml isp param config */
 #define V4L2_META_AML_ISP_STATS     v4l2_fourcc('A', 'S', 'T', 'S') /* Aml isp statistics */
 
 #define DEFAULT_BUFFER_NUM 4
-
-typedef struct camera_configuration {
-  struct aml_format format;
-} camera_configuration_t;
 
 typedef struct v4l2buffer_info {
   void *pstart;
@@ -143,7 +90,7 @@ struct thread_info {
   pthread_t p_tid;
   uint32_t status;
 
-  // sem_t p_sem;
+  /* sem_t p_sem; */
 
   /* aml isp algorithm related */
   aisp_calib_info_t calib;
@@ -154,6 +101,8 @@ struct thread_param {
   //v4l2buffer_info_t *buffer_isp_output0[DEFAULT_BUFFER_NUM];  /* reserved */
   v4l2buffer_info_t buffer_isp_stats[DEFAULT_BUFFER_NUM];
   v4l2buffer_info_t buffer_isp_param;
+
+  struct sensorConfig *sensor_cfg;
 
   /* format related */
   uint32_t width;
@@ -190,8 +139,8 @@ static struct thread_param tparam = {
   .wdr_mode = WDR_MODE_NONE,
 #endif
 
-  .fps = 0,
   .capture_count = 0,
+  .fps = 0,
 
   .mutex = PTHREAD_MUTEX_INITIALIZER,
   .cond = PTHREAD_COND_INITIALIZER,
@@ -224,7 +173,11 @@ static int check_capability(struct media_entity *entity) {
 
 static int media_set_wdr_mode(media_stream_t *stream, uint32_t wdr_mode) {
   int ret = -1;
+  media_set_wdrMode(stream, 0);
+  ret = media_set_wdrMode(stream, wdr_mode);
 
+  return ret;
+#if 0
   /* sensor wdr mode */
   if (wdr_mode != ISP_SDR_DCAM_MODE) {
     ret = v4l2_subdev_set_wdr(stream->sensor.entity, wdr_mode);
@@ -250,42 +203,19 @@ static int media_set_wdr_mode(media_stream_t *stream, uint32_t wdr_mode) {
 
   log_debug("set wdr mode successfully");
   return ret;
+#endif
 }
 
-static int media_stream_init(struct media_device *media_dev,
-  media_stream_t *stream, pipeline_info_t *p_info_ptr) {
-  memset(stream, 0, sizeof(*stream));
+static int media_stream_init(media_stream_t *stream,
+    struct media_device *media_dev) {
 
-  strncpy(stream->sensor.entity_name,
-    p_info_ptr->sensor_entity_name, sizeof(stream->sensor.entity_name));
-  strncpy(stream->isp_csiphy.entity_name,
-    p_info_ptr->isp_csiphy_entity_name, sizeof(stream->isp_csiphy.entity_name));
-  strncpy(stream->isp_adapter.entity_name,
-    p_info_ptr->isp_adapter_entity_name, sizeof(stream->isp_adapter.entity_name));
-  strncpy(stream->isp_core.entity_name,
-    p_info_ptr->isp_core_entity_name, sizeof(stream->isp_core.entity_name));
-  strncpy(stream->video_out.entity_name,
-    p_info_ptr->video_out_entity_name, sizeof(stream->video_out.entity_name));
-  strncpy(stream->video_statistics.entity_name,
-    p_info_ptr->video_statistics_entity_name, sizeof(stream->video_statistics.entity_name));
-  strncpy(stream->video_param.entity_name,
-    p_info_ptr->video_param_entity_name, sizeof(stream->video_param.entity_name));
+  mediaStreamInit(stream, media_dev);
 
-
-  stream->sensor.entity = media_get_entity_by_name(media_dev,
-    stream->sensor.entity_name, strlen(stream->sensor.entity_name));
-  stream->isp_csiphy.entity = media_get_entity_by_name(media_dev,
-    stream->isp_csiphy.entity_name, strlen(stream->isp_csiphy.entity_name));
-  stream->isp_adapter.entity = media_get_entity_by_name(media_dev,
-    stream->isp_adapter.entity_name, strlen(stream->isp_adapter.entity_name));
-  stream->isp_core.entity = media_get_entity_by_name(media_dev,
-    stream->isp_core.entity_name, strlen(stream->isp_core.entity_name));
-  stream->video_out.entity = media_get_entity_by_name(media_dev,
-    stream->video_out.entity_name, strlen(stream->video_out.entity_name));
-  stream->video_statistics.entity = media_get_entity_by_name(media_dev,
-    stream->video_statistics.entity_name, strlen(stream->video_statistics.entity_name));
-  stream->video_param.entity = media_get_entity_by_name(media_dev,
-  stream->video_param.entity_name, strlen(stream->video_param.entity_name));
+  android::staticPipe::fetchPipeMaxResolution(
+      &v4l2_media_stream,
+      tparam.width,
+      tparam.height
+  );
 
   if (1 == camera_num) {
     tparam.fmt_code = MEDIA_BUS_FMT_SRGGB12_1X12;
@@ -297,6 +227,7 @@ static int media_stream_init(struct media_device *media_dev,
     log_error("only support 1 or 2 camera");
     return 0;
   }
+
   /* set wdr mode */
   media_set_wdr_mode(stream, tparam.wdr_mode);
 
@@ -311,46 +242,45 @@ static int media_stream_init(struct media_device *media_dev,
  * include sensor, isp-csiphy, isp-adapter, isp-core
  */
 static int set_subdev_pad_format(media_stream_t *stream,
-  camera_configuration_t *cfg) {
+  stream_configuration_t *cfg) {
   int ret = -1;
   struct v4l2_mbus_framefmt mbus_format;
-  int which = V4L2_SUBDEV_FORMAT_ACTIVE;
+  enum v4l2_subdev_format_whence which = V4L2_SUBDEV_FORMAT_ACTIVE;
 
   mbus_format.width  = cfg->format.width;
   mbus_format.height = cfg->format.height;
   mbus_format.code   = cfg->format.code;
 
   /* sensor source pad[0] format */
-  ret = v4l2_subdev_set_format(stream->sensor.entity,
+  ret = v4l2_subdev_set_format(stream->sensor_ent,
     &mbus_format, 0, which);
   if (ret < 0) {
     log_error("set subdev sensor pad[0] format failed");
     return ret;
   }
-  cmos_set_sensor_entity(stream->sensor.entity, 0);
 
   /* isp-csiphy sink & source pad[0, 1] format */
-  ret = v4l2_subdev_set_format(stream->isp_csiphy.entity,
+  ret = v4l2_subdev_set_format(stream->csiphy_ent,
     &mbus_format, 0, which);
   if (ret < 0) {
     log_error("set subdev isp-ciphy pad[0] format failed");
     return ret;
   }
-  ret = v4l2_subdev_set_format(stream->isp_csiphy.entity,
+  ret = v4l2_subdev_set_format(stream->csiphy_ent,
     &mbus_format, 1, which);
   if (ret < 0) {
-    log_error("set subdev isp-ciphy pad[1] format failed");
+    log_error("set subdev isp-csiphy pad[1] format failed");
     return ret;
   }
 
   /* isp-adapter sink & source pad[0, 1] format */
-  ret = v4l2_subdev_set_format(stream->isp_adapter.entity,
+  ret = v4l2_subdev_set_format(stream->adap_ent,
     &mbus_format, 0, which);
   if (ret < 0) {
     log_error("set subdev isp-adapter pad[0] format failed");
     return ret;
   }
-  ret = v4l2_subdev_set_format(stream->isp_adapter.entity,
+  ret = v4l2_subdev_set_format(stream->adap_ent,
     &mbus_format, 1, which);
   if (ret < 0) {
     log_error("set subdev isp-adapter pad[1] format failed");
@@ -358,7 +288,7 @@ static int set_subdev_pad_format(media_stream_t *stream,
   }
 
   /* isp-core sink pad[0] format */
-  ret = v4l2_subdev_set_format(stream->isp_core.entity,
+  ret = v4l2_subdev_set_format(stream->isp_ent,
     &mbus_format, 0, which);
   if (ret < 0) {
     log_error("set subdev isp-core pad[0] format failed");
@@ -383,12 +313,12 @@ static int link_and_activate_subdev(media_stream_t *stream) {
   int flag = MEDIA_LNK_FL_ENABLED;    /* The link is enabled and can be used to transfer media data */
 
   /* source pad[0] sensor --> sink pad[0] isp-csiphy */
-  source_pad = (struct media_pad*)media_entity_get_pad(stream->sensor.entity, SENSOR_SOURCE_PAD_INDEX);
+  source_pad = (struct media_pad*)media_entity_get_pad(stream->sensor_ent, SENSOR_SOURCE_PAD_INDEX);
   if (!source_pad) {
     log_error("get sensor source pad[0] failed");
     return -1;
   }
-  sink_pad = (struct media_pad*)media_entity_get_pad(stream->isp_csiphy.entity, SINK_PAD_INDEX);
+  sink_pad = (struct media_pad*)media_entity_get_pad(stream->csiphy_ent, SINK_PAD_INDEX);
   if (!sink_pad) {
     log_error("get isp-csiphy sink pad[0] failed");
     return -1;
@@ -400,12 +330,12 @@ static int link_and_activate_subdev(media_stream_t *stream) {
   }
 
   /* source pad[1] isp-csiphy --> sink pad[0] isp-adapter */
-  source_pad = (struct media_pad*)media_entity_get_pad(stream->isp_csiphy.entity, SOURCE_PAD_INDEX);
+  source_pad = (struct media_pad*)media_entity_get_pad(stream->csiphy_ent, SOURCE_PAD_INDEX);
   if (!source_pad) {
     log_error("get isp-csiphy source pad[1] failed");
     return -1;
   }
-  sink_pad = (struct media_pad*)media_entity_get_pad(stream->isp_adapter.entity, SINK_PAD_INDEX);
+  sink_pad = (struct media_pad*)media_entity_get_pad(stream->adap_ent, SINK_PAD_INDEX);
   if (!sink_pad) {
     log_error("get isp-adapter sink pad[0] failed");
     return -1;
@@ -417,12 +347,12 @@ static int link_and_activate_subdev(media_stream_t *stream) {
   }
 
   /* source pad[1] isp-adapter --> sink pad[0] isp-core */
-  source_pad = (struct media_pad*)media_entity_get_pad(stream->isp_adapter.entity, SOURCE_PAD_INDEX);
+  source_pad = (struct media_pad*)media_entity_get_pad(stream->adap_ent, SOURCE_PAD_INDEX);
   if (!source_pad) {
     log_error("get isp-adapter source pad[1] failed");
     return -1;
   }
-  sink_pad = (struct media_pad*)media_entity_get_pad(stream->isp_core.entity, SINK_PAD_INDEX);
+  sink_pad = (struct media_pad*)media_entity_get_pad(stream->isp_ent, SINK_PAD_INDEX);
   if (!sink_pad) {
     log_error("get isp-core sink pad[0] failed");
     return -1;
@@ -446,14 +376,15 @@ static int link_and_activate_subdev(media_stream_t *stream) {
 int media_stream_config(media_stream_t *stream) {
   int ret = -1;
 
-  camera_configuration_t cfg;
-  cfg.format.width = 3840;
-  cfg.format.height = 2160;
-  cfg.format.fourcc = V4L2_PIX_FMT_NV12;
-  cfg.format.code = tparam.fmt_code;;
-  cfg.format.nplanes = 1;
+  stream_configuration_t stream_cfg;
+  memset(&stream_cfg, 0, sizeof(stream_configuration_t));
+  stream_cfg.format.width = tparam.width;
+  stream_cfg.format.height = tparam.height;
+  stream_cfg.format.fourcc = tparam.pixformat;
+  stream_cfg.format.code = tparam.fmt_code;;
+  stream_cfg.format.nplanes = 1;
 
-  ret = set_subdev_pad_format(stream, &cfg);
+  ret = set_subdev_pad_format(stream, &stream_cfg);
   if (ret < 0) {
     log_error("set subdev format failed");
     return ret;
@@ -476,7 +407,7 @@ int media_stream_config(media_stream_t *stream) {
  * set isp-stats entity format (out: statistics)
  */
 static int set_isp_stats_fmt(media_stream_t *stream,
-  camera_configuration_t *cfg) {
+  stream_configuration_t *cfg) {
   int ret = -1;
   struct v4l2_format v4l2_fmt;
 
@@ -488,7 +419,7 @@ static int set_isp_stats_fmt(media_stream_t *stream,
   v4l2_fmt.fmt.pix_mp.pixelformat = V4L2_META_AML_ISP_STATS;
   v4l2_fmt.fmt.pix_mp.field = V4L2_FIELD_ANY;
 
-  ret = v4l2_video_set_format(stream->video_statistics.entity, &v4l2_fmt);
+  ret = v4l2_video_set_format(stream->video_stats, &v4l2_fmt);
   if (ret < 0) {
     log_error("set isp-stats fmt failed, ret:%d", ret);
     return ret;
@@ -501,7 +432,7 @@ static int set_isp_stats_fmt(media_stream_t *stream,
  * set isp-param entity format (in: parameter)
  */
 static int set_isp_param_fmt(media_stream_t *stream,
-  camera_configuration_t *cfg) {
+  stream_configuration_t *cfg) {
   int ret = -1;
   struct v4l2_format v4l2_fmt;
 
@@ -513,11 +444,37 @@ static int set_isp_param_fmt(media_stream_t *stream,
   v4l2_fmt.fmt.pix_mp.pixelformat = V4L2_META_AML_ISP_CONFIG;
   v4l2_fmt.fmt.pix_mp.field = V4L2_FIELD_ANY;
 
-  ret = v4l2_video_set_format(stream->video_statistics.entity, &v4l2_fmt);
+  ret = v4l2_video_set_format(stream->video_param, &v4l2_fmt);
   if (ret < 0) {
-    log_error("set isp-stats fmt failed, ret:%d", ret);
+    log_error("set isp-param fmt failed, ret:%d", ret);
     return ret;
   }
+
+  return 0;
+}
+
+/* isp algorithm interface */
+struct ispIF isp_alg_iface;
+static int get_isp_alg_interface() {
+  void *handle;
+  handle = dlopen("/usr/lib/libispaml.so", RTLD_NOW);
+  if (!handle) {
+    printf("dlopen libispaml.so error: %s\n", dlerror());
+    return -1;
+  }
+
+  isp_alg_iface.alg2User = (isp_alg2user)dlsym(handle, "aisp_alg2user");
+  isp_alg_iface.alg2Kernel = (isp_alg2kernel)dlsym(handle, "aisp_alg2kernel");
+  isp_alg_iface.algEnable = (isp_enable)dlsym(handle, "aisp_enable");
+  isp_alg_iface.algDisable = (isp_disable)dlsym(handle, "aisp_disable");
+  isp_alg_iface.algFwInterface = (isp_fw_interface)dlsym(handle, "aisp_fw_interface");
+
+
+  printf("alg2User func addr: %p\n", isp_alg_iface.alg2User);
+  printf("alg2Kernel func addr: %p\n", isp_alg_iface.alg2Kernel);
+  printf("algEnable func addr: %p\n", isp_alg_iface.algEnable);
+  printf("algDisable func addr: %p\n", isp_alg_iface.algDisable);
+  printf("algFwInterface func addr: %p\n", isp_alg_iface.algFwInterface);
 
   return 0;
 }
@@ -532,10 +489,10 @@ static int set_isp_param_fmt(media_stream_t *stream,
 static void isp_alg_param_init() {
   int ret = -1;
 
-  check_capability(v4l2_media_stream.video_statistics.entity);
-  check_capability(v4l2_media_stream.video_param.entity);
+  check_capability(v4l2_media_stream.video_stats);
+  check_capability(v4l2_media_stream.video_param);
 
-  camera_configuration_t common_cfg;
+  stream_configuration_t common_cfg;
   common_cfg.format.width = 1024;
   common_cfg.format.height = 256;
   common_cfg.format.nplanes = 1;
@@ -548,7 +505,7 @@ static void isp_alg_param_init() {
   v4l2_rb.count = DEFAULT_BUFFER_NUM;
   v4l2_rb.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   v4l2_rb.memory = V4L2_MEMORY_MMAP;
-  ret = v4l2_video_req_bufs(v4l2_media_stream.video_statistics.entity, &v4l2_rb);
+  ret = v4l2_video_req_bufs(v4l2_media_stream.video_stats, &v4l2_rb);
   if (ret < 0) {
     log_error("isp-stats request buffer error");
     return;
@@ -557,7 +514,7 @@ static void isp_alg_param_init() {
   v4l2_rb.count = 1;
   v4l2_rb.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   v4l2_rb.memory = V4L2_MEMORY_MMAP;
-  ret = v4l2_video_req_bufs(v4l2_media_stream.video_param.entity, &v4l2_rb);
+  ret = v4l2_video_req_bufs(v4l2_media_stream.video_param, &v4l2_rb);
   if (ret < 0) {
     log_error("isp-param request buffer error");
     return;
@@ -571,7 +528,7 @@ static void isp_alg_param_init() {
     v4l2_buf.index = i;
     v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     v4l2_buf.memory = V4L2_MEMORY_MMAP;
-    ret = v4l2_video_query_buf(v4l2_media_stream.video_statistics.entity, &v4l2_buf);
+    ret = v4l2_video_query_buf(v4l2_media_stream.video_stats, &v4l2_buf);
     if (ret < 0) {
       log_error("isp-stats query buffer error, ret: %d", ret);
       return;
@@ -581,7 +538,7 @@ static void isp_alg_param_init() {
       log_debug("isp stats query buffer, length: %u, offset: %d",
         v4l2_buf.length, v4l2_buf.m.offset);
       tparam.buffer_isp_stats[i].pstart = mmap (NULL, v4l2_buf.length,
-        PROT_READ | PROT_WRITE, MAP_SHARED, v4l2_media_stream.video_statistics.entity->fd, v4l2_buf.m.offset);
+        PROT_READ | PROT_WRITE, MAP_SHARED, v4l2_media_stream.video_stats->fd, v4l2_buf.m.offset);
       if (tparam.buffer_isp_stats[i].pstart == MAP_FAILED) {
         log_error("isp stats map buffer error");
         return;
@@ -593,7 +550,7 @@ static void isp_alg_param_init() {
   v4l2_buf.index = 0;
   v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   v4l2_buf.memory = V4L2_MEMORY_MMAP;
-  ret = v4l2_video_query_buf(v4l2_media_stream.video_param.entity, &v4l2_buf);
+  ret = v4l2_video_query_buf(v4l2_media_stream.video_param, &v4l2_buf);
   if (ret < 0) {
     log_error("isp-param query buffer error, ret: %d", ret);
     return;
@@ -603,23 +560,44 @@ static void isp_alg_param_init() {
     log_debug("isp param query buffer, length: %u, offset: %d",
       v4l2_buf.length, v4l2_buf.m.offset);
     tparam.buffer_isp_param.pstart = mmap (NULL, v4l2_buf.length,
-      PROT_READ | PROT_WRITE, MAP_SHARED, v4l2_media_stream.video_param.entity->fd, v4l2_buf.m.offset);
+      PROT_READ | PROT_WRITE, MAP_SHARED, v4l2_media_stream.video_param->fd, v4l2_buf.m.offset);
     if (tparam.buffer_isp_param.pstart == MAP_FAILED) {
       log_error("isp stats map buffer error");
       return;
     }
   }
 
+  /* TODO:
+   * add interface of aml isp algorithm
+   */
   /* Initialize algorithm related */
   char alg_init[256 * 1024];
 
-  cmos_sensor_control_cb(&tparam.info.pstAlgCtx.stSnsExp);
-  cmos_get_sensor_calibration(&tparam.info.calib);
+  if (-1 == get_isp_alg_interface()) {
+    log_error("get isp algorithm interface failed");
+    return;
+  }
 
-  aisp_enable(0, &tparam.info.pstAlgCtx, &tparam.info.calib);
+  tparam.sensor_cfg = matchSensorConfig(&v4l2_media_stream);
+  if (NULL == tparam.sensor_cfg) {
+    log_error("match sensor config failed");
+    return;
+  }
+
+#ifdef  WDR_ENABLE
+  cmos_set_sensor_entity(tparam.sensor_cfg, v4l2_media_stream.sensor_ent, 1);
+#else
+  cmos_set_sensor_entity(tparam.sensor_cfg, v4l2_media_stream.sensor_ent, 0);
+#endif
+
+  cmos_sensor_control_cb(tparam.sensor_cfg, &tparam.info.pstAlgCtx.stSnsExp);
+  cmos_get_sensor_calibration(tparam.sensor_cfg, &tparam.info.calib);
+
+
+  (isp_alg_iface.algEnable)(0, &tparam.info.pstAlgCtx, &tparam.info.calib);
   memset(alg_init, 0, sizeof(alg_init));
-  aisp_alg2user(0, alg_init);
-  aisp_alg2kernel(0, tparam.buffer_isp_param.pstart);
+  (isp_alg_iface.alg2User)(0, alg_init);
+  (isp_alg_iface.alg2Kernel)(0, tparam.buffer_isp_param.pstart);
 
   /* first queue isp-stats & isp-param buffers to clean */
   for (int i = 0; i < DEFAULT_BUFFER_NUM; i++) {
@@ -627,7 +605,7 @@ static void isp_alg_param_init() {
     v4l2_buf.index = i;
     v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     v4l2_buf.memory  = V4L2_MEMORY_MMAP;
-    ret = v4l2_video_q_buf(v4l2_media_stream.video_statistics.entity, &v4l2_buf);
+    ret = v4l2_video_q_buf(v4l2_media_stream.video_stats, &v4l2_buf);
     if (ret < 0) {
       log_error("isp-stats first queue buffer error, ret: %d, index:  %d", ret, i);
       return;
@@ -637,20 +615,20 @@ static void isp_alg_param_init() {
   v4l2_buf.index = 0;
   v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   v4l2_buf.memory = V4L2_MEMORY_MMAP;
-  ret = v4l2_video_q_buf(v4l2_media_stream.video_param.entity, &v4l2_buf);
+  ret = v4l2_video_q_buf(v4l2_media_stream.video_param, &v4l2_buf);
   if (ret < 0) {
     log_error("isp-param first queue buffer error, ret: %d", ret);
     return;
   }
 
   /* streamon isp-stats & isp-param */
-  ret = v4l2_video_stream_on(v4l2_media_stream.video_statistics.entity,
+  ret = v4l2_video_stream_on(v4l2_media_stream.video_stats,
     V4L2_BUF_TYPE_VIDEO_CAPTURE);
   if (ret < 0) {
     log_error("isp-stats streamon error, ret: %d", ret);
     return;
   }
-  ret = v4l2_video_stream_on(v4l2_media_stream.video_param.entity,
+  ret = v4l2_video_stream_on(v4l2_media_stream.video_param,
     V4L2_BUF_TYPE_VIDEO_CAPTURE);
   if (ret < 0) {
     log_error("isp-stats streamon error, ret: %d", ret);
@@ -667,7 +645,6 @@ static int64_t get_current_time_msec(void) {
   return tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 #endif
-
 
 
 /**
@@ -715,7 +692,7 @@ static void isp_alg_process_one(struct thread_param *tparam) {
   v4l2_buf_video_statistics.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   v4l2_buf_video_statistics.memory = V4L2_MEMORY_MMAP;
   ret = v4l2_video_dq_buf(
-    v4l2_media_stream.video_statistics.entity,
+    v4l2_media_stream.video_stats,
     &v4l2_buf_video_statistics
   );
   if (ret < 0) {
@@ -727,13 +704,13 @@ static void isp_alg_process_one(struct thread_param *tparam) {
   v4l2_buf_video_param.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
   v4l2_buf_video_param.memory = V4L2_MEMORY_MMAP;
   ret = v4l2_video_dq_buf(
-    v4l2_media_stream.video_param.entity,
+    v4l2_media_stream.video_param,
     &v4l2_buf_video_param
   );
   if (ret < 0) {
     log_error("dequeue video param buffer failed");
     v4l2_video_q_buf(
-      v4l2_media_stream.video_statistics.entity,
+      v4l2_media_stream.video_stats,
       &v4l2_buf_video_statistics
     );
     return;
@@ -741,16 +718,16 @@ static void isp_alg_process_one(struct thread_param *tparam) {
 
   idx = v4l2_buf_video_statistics.index;
 
-  aisp_alg2user(0, tparam->buffer_isp_stats[idx].pstart);
-  aisp_alg2kernel(0, tparam->buffer_isp_param.pstart);
+  (isp_alg_iface.alg2User)(0, tparam->buffer_isp_stats[idx].pstart);
+  (isp_alg_iface.alg2Kernel)(0, tparam->buffer_isp_param.pstart);
 
   /* TODO
    * ask what for lately
    */
-  usleep(1000*10);
+  usleep(1000*5);
 
   ret = v4l2_video_q_buf(
-    v4l2_media_stream.video_statistics.entity,
+    v4l2_media_stream.video_stats,
     &v4l2_buf_video_statistics
   );
   if (ret < 0) {
@@ -758,7 +735,7 @@ static void isp_alg_process_one(struct thread_param *tparam) {
     return;
   }
   ret = v4l2_video_q_buf(
-    v4l2_media_stream.video_param.entity,
+    v4l2_media_stream.video_param,
     &v4l2_buf_video_param
   );
   if (ret < 0) {
@@ -829,11 +806,11 @@ static void *isp_alg_thread(void *arg) {
 
   /* streamoff and unmap isp-stats & isp-param buffers */
   v4l2_video_stream_off(
-    v4l2_media_stream.video_statistics.entity,
+    v4l2_media_stream.video_stats,
     V4L2_BUF_TYPE_VIDEO_CAPTURE
   );
   v4l2_video_stream_off(
-    v4l2_media_stream.video_param.entity,
+    v4l2_media_stream.video_param,
     V4L2_BUF_TYPE_VIDEO_CAPTURE
   );
 
@@ -925,7 +902,7 @@ int main(int argc, char *argv[]) {
     log_error("media device enumerate failed");
     return -1;
   }
-  media_stream_init(media_dev, &v4l2_media_stream, &p_info);
+  media_stream_init(&v4l2_media_stream, media_dev);
   media_stream_config(&v4l2_media_stream);
   isp_alg_param_init();
 
@@ -969,7 +946,7 @@ int main(int argc, char *argv[]) {
   log_debug("connected_sockfd: %d", connected_sockfd);
 
   char video_dev_name[32] = {0};
-  strcpy(video_dev_name, v4l2_media_stream.video_out.entity->devname);
+  strcpy(video_dev_name, v4l2_media_stream.video_ent0->devname);
   log_debug("video_dev_name: %s", video_dev_name);
   int r = TEMP_FAILURE_RETRY(send(connected_sockfd, video_dev_name, strlen(video_dev_name), 0));
   if (r < 0) {
@@ -994,6 +971,6 @@ int main(int argc, char *argv[]) {
   unlink(server_socket);
   close(connected_sockfd);
   close(listen_fd);
-  log_debug("mediactrlsrc exit");
+  log_debug("camctrl exit");
   return 0;
 }

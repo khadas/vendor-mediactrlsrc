@@ -4,7 +4,7 @@
  * This source code is subject to the terms and conditions defined in below
  * which is part of this source code package.
  *
- * Description: Mediactrlsrc Log Function
+ * Description: Log Function
  */
 
 // Copyright (C) 2019 Amlogic, Inc. All rights reserved.
@@ -65,11 +65,11 @@ static inline char *get_cur_time() {
 #define log_debug(M, ...)
 #else
 #ifdef LOG_NOCOLORS
-  #define log_debug(M, ...) fprintf(stderr, "[%s]  DEBUG  [Mediactrlsrc %s:%d:%s]" M "\n", \
+  #define log_debug(M, ...) fprintf(stderr, "[%s]  DEBUG  [amlv4l2src %s:%d:%s]" M "\n", \
     get_cur_time(), __FILE__, __LINE__, __func__, ##__VA_ARGS__)
 #else
   /* white color */
-  #define log_debug(M, ...) fprintf(stderr, "[%s]  \33[1;37mDEBUG\33[0;39m  [Mediactrlsrc %s:%d:%s]" M "\n", \
+  #define log_debug(M, ...) fprintf(stderr, "[%s]  \33[1;37mDEBUG\33[0;39m  [amlv4l2src %s:%d:%s]" M "\n", \
     get_cur_time(), __FILE__, __LINE__, __func__, ##__VA_ARGS__)
 #endif /*  NOCOLORS */
 #endif /*  NDEBUG */
@@ -78,21 +78,21 @@ static inline char *get_cur_time() {
 #define clean_errno() (errno == 0 ? "None" : strerror(errno))
 
 #ifdef LOG_NOCOLORS
-  #define log_error(M, ...) fprintf(stderr, "[%s]  ERROR  [Mediactrlsrc %s:%d:%s] errno:%s " M "\n", \
+  #define log_error(M, ...) fprintf(stderr, "[%s]  ERROR  [amlv4l2src %s:%d:%s] errno:%s " M "\n", \
     get_cur_time(), __FILE__, __LINE__, __func__, clean_errno(), ##__VA_ARGS__)
-  #define log_warn(M, ...) fprintf(stderr, "[%s]  WARN  [Mediactrlsrc %s:%d:%s] errno:%s" M "\n", \
+  #define log_warn(M, ...) fprintf(stderr, "[%s]  WARN  [amlv4l2src %s:%d:%s] errno:%s" M "\n", \
     get_cur_time(), __FILE__, __LINE__, __func__, clean_errno(), ##__VA_ARGS__)
-  #define log_info(M, ...) fprintf(stderr, "[%s]  INFO  [Mediactrlsrc %s:%d:%s]" M "\n", \
+  #define log_info(M, ...) fprintf(stderr, "[%s]  INFO  [amlv4l2src %s:%d:%s]" M "\n", \
     get_cur_time(), __FILENAME__, __LINE__, __func__, ##__VA_ARGS__)
 #else
   /* red color */
-  #define log_error(M, ...) fprintf(stderr, "[%s]  \33[1;31mERROR\33[0;39m  [Mediactrlsrc %s:%d:%s] errno:%s" M "\n", \
+  #define log_error(M, ...) fprintf(stderr, "[%s]  \33[1;31mERROR\33[0;39m  [amlv4l2src %s:%d:%s] errno:%s" M "\n", \
     get_cur_time(), __FILE__, __LINE__, __func__, clean_errno(), ##__VA_ARGS__)
   /* yellow color */
-  #define log_warn(M, ...) fprintf(stderr, "[%s]  \33[1;33mWARN\33[0;39m  [Mediactrlsrc %s:%d:%s] errno:%s" M "\n", \
+  #define log_warn(M, ...) fprintf(stderr, "[%s]  \33[1;33mWARN\33[0;39m  [amlv4l2src %s:%d:%s] errno:%s" M "\n", \
     get_cur_time(), __FILE__, __LINE__, __func__, clean_errno(), ##__VA_ARGS__)
   /* blue color */
-  #define log_info(M, ...) fprintf(stderr, "[%s]  \33[1;34mINFO\33[0;39m  [Mediactrlsrc %s:%d:%s]" M "\n", \
+  #define log_info(M, ...) fprintf(stderr, "[%s]  \33[1;34mINFO\33[0;39m  [amlv4l2src %s:%d:%s]" M "\n", \
     get_cur_time(), __FILENAME__, __LINE__, __func__, ##__VA_ARGS__)
 #endif /*  NOCOLORS */
 

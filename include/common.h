@@ -4,7 +4,7 @@
  * This source code is subject to the terms and conditions defined in below
  * which is part of this source code package.
  *
- * Description: Amlv4l2 Library Header
+ * Description: Common Function Header
  */
 
 // Copyright (C) 2019 Amlogic, Inc. All rights reserved.
@@ -31,6 +31,11 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-char *amlv4l2_obtain_devname(const char *pathname);
-void amlv4l2_notify_streamon();
-void amlv4l2_notify_stream();
+/* camsrc and camctrl related definition */
+#define DEFAULT_SERVER_SOCKET0 "/tmp/camctrl0.socket"
+#define DEFAULT_SERVER_SOCKET1 "/tmp/camctrl1.socket"
+
+
+int udp_sock_create(const char* server_socket_path);
+void udp_sock_send(int sockfd, char *buffer, int len);
+void udp_sock_recv(int sockfd, char *buffer, int len);
