@@ -51,4 +51,5 @@ void aml_src_get_##moduletype##_method(aml_src_t *amlsrc) {                     
 
 
 SRC_FUNCTION(cam)
+SRC_FUNCTION(hdmi)
 

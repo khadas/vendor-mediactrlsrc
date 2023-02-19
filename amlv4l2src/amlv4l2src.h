@@ -32,7 +32,8 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-char *aml_v4l2src_connect(const char* devname, const char* devtype);
+// char *aml_v4l2src_connect(const char* devname, int &dev_type);
+int aml_v4l2src_connect(char** devname);
 void aml_v4l2src_disconnect();
 void aml_v4l2src_streamon();
 void aml_v4l2src_streamoff();
