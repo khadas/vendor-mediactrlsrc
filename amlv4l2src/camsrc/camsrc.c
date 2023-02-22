@@ -43,8 +43,8 @@
 #include <fcntl.h>
 #include <string.h>
 
-#include "common.h"
-#include "log.h"
+#include "mediactrl_common.h"
+#include "mediactrl_log.h"
 
 static char *server_socket = DEFAULT_SERVER_SOCKET0;
 static int client_sockfd = -1;

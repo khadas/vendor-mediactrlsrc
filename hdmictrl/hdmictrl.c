@@ -42,8 +42,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include "common.h"
-#include "log.h"
+#include "mediactrl_common.h"
+#include "mediactrl_log.h"
 
 #include <sys/socket.h>
 #include <sys/un.h>

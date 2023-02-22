@@ -44,8 +44,8 @@
 #include <ctype.h>
 #include <pthread.h>
 #include <dlfcn.h>
-#include "common.h"
-#include "log.h"
+#include "mediactrl_common.h"
+#include "mediactrl_log.h"
 
 #include "mediactl.h"
 #include "v4l2subdev.h"

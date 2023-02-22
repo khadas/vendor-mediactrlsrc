@@ -43,7 +43,7 @@
 #include <fcntl.h>
 #include <string.h>
 
-#include "log.h"
+#include "mediactrl_log.h"
 
 int udp_sock_create(const char* server_socket_path) {
   if (NULL == server_socket_path)
