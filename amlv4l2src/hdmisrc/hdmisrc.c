@@ -42,8 +42,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include "mediactrl_common.h"
-#include "mediactrl_log.h"
+#include "common.h"
+#include "log.h"
 
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -96,12 +96,8 @@ hdmi_src_obtain_devname(const char *filepath) {
   }
 
   client_sockfd = udp_sock_create(server_socket);//need add
-  // char send_buffer[32] = {0};
-  // strcpy(send_buffer, "/tmp/hdmi-rx0");
-  // udp_sock_send(client_sockfd, send_buffer, sizeof(send_buffer));
-  // log_debug("send_buffer: %s\n", send_buffer);
-  // // udp_sock_recv(client_sockfd,vdevname_buffer,sizeof(vdevname_buffer));
 
+  return;
 }
 
 char *
@@ -121,16 +117,28 @@ hdmi_src_initialize(const char* filepath) {
 void
 hdmi_src_finalize() {
   log_debug("finalize\n");
-  char recv_buffer[32] = {0};
+  char send_buffer[32] = {0};
 
-  strcpy(recv_buffer, "disconnect");
-  udp_sock_send(client_sockfd, recv_buffer, sizeof(recv_buffer));
+  strcpy(send_buffer, "disconnect");
+  udp_sock_send(client_sockfd, send_buffer, sizeof(send_buffer));
   return;
 }
 
 void
 hdmi_src_start() {
   printf("enter  hdmi_src_start \n");
+
+	char recv_buffer[32] = {0};
+  int r = TEMP_FAILURE_RETRY(recv(client_sockfd, recv_buffer, sizeof(recv_buffer), 0));
+
+  if (0 == strcmp("sigstable", recv_buffer)) {
+		  printf("recv sigstable\n");
+		  return;
+  } else {
+		  printf("recv sigstable error\n");
+		  return;
+	  }
+
   return;
 }
 

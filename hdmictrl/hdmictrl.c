@@ -42,8 +42,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include "mediactrl_common.h"
-#include "mediactrl_log.h"
+#include "common.h"
+#include "log.h"
 
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -227,12 +227,18 @@ static void TvEventCallback(event_type_t eventType, void *eventData)
                                                    signalDetectEvent->SignalStatus,
                                                    signalDetectEvent->isDviSignal,
                                                    signalDetectEvent->Hdrinfo);
-       if (signalDetectEvent->SignalStatus) {
-			msg_node_t t_node = {0};
-			t_node.data->msg_id = TVIN_SIG_STATUS_STABLE;
+       if (TVIN_SIG_STATUS_STABLE == signalDetectEvent->SignalStatus) {
+
 			printf("prepare enter msg_queue_send_msg");
-			msg_queue_send_msg(&g_t_svctx->t_queue,&t_node);
-	   }
+
+			char send_buffer[32] = {0};
+			hdmi_rx_svc_t *t_svctx = NULL;
+			strcpy(send_buffer, "sigstable");
+			int	ret = TEMP_FAILURE_RETRY(send(t_svctx->connect_socker_fd, send_buffer, strlen(send_buffer), 0));
+					if (ret < 0) {
+							printf("send sigstable fail");
+					}
+		}
 
     } else if (eventType == TV_EVENT_TYPE_SOURCE_CONNECT) {
         SourceConnectCallback_t *sourceConnectEvent = (SourceConnectCallback_t *)(eventData);
@@ -332,16 +338,6 @@ static void *process_cb_thread(void *arg)
 	char video_dev_name[32] = {0};
     int ret = 0;
 
-	hdmi_rx_svc_t *t_svctx = (hdmi_rx_svc_t *)(arg);
-	while (t_svctx->b_svctx_enable) {
-		if (msg_queue_receive_msg(&t_svctx->t_queue,&t_msg)) {
-			if (t_msg.data->msg_id == (AML_HDMI_RX_E)TVIN_SIG_STATUS_STABLE)
-			ret = TEMP_FAILURE_RETRY(send(t_svctx->connect_socker_fd, t_msg.data->msg_buf, strlen(t_msg.data->msg_buf), 0));
-			if (ret < 0) {
-					printf("send msg fail");
-			}
-		}
-	}
   return NULL; //add
 }
 

@@ -43,7 +43,7 @@
 #include <fcntl.h>
 #include <string.h>
 
-#include "mediactrl_log.h"
+#include "log.h"
 
 int udp_sock_create(const char* server_socket_path) {
   if (NULL == server_socket_path)
@@ -61,6 +61,16 @@ int udp_sock_create(const char* server_socket_path) {
   server_unix.sun_family = AF_UNIX;
   strcpy(server_unix.sun_path, server_socket_path);
   int len = offsetof(struct sockaddr_un, sun_path) + strlen(server_unix.sun_path);
+  struct timeval *tv = NULL;
+  int timeouts = 0;
+  tv->tv_sec = 10;
+  tv->tv_usec = 0;
+
+  if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *) tv, sizeof(tv))) {
+    perror("setsockopt error");
+    return -1;
+  }
+
   if (connect(sockfd, (struct sockaddr *)&server_unix, len) < 0) {
     log_error("connect ...");
     return -1;
