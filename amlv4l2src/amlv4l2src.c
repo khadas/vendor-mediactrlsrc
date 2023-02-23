@@ -47,14 +47,6 @@ typedef void (*Func) (aml_src_t *);
 
 aml_src_t amlsrc;
 
-enum DeviceType
-{
-  PRO_USB_CAM,
-  PRO_ARM_MIPI_CAM,
-  PRO_aml_MIPI_CAM,
-  PRO_HDMI_RX
-}//aml t7 and t7c devicetype
-
 int aml_v4l2src_get_method(aml_src_t *pamlsrc, const char* devtype) {
   if (pamlsrc->initialize &&
       pamlsrc->finalize &&
