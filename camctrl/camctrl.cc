@@ -591,7 +591,7 @@ static void isp_alg_param_init() {
 #endif
 
   cmos_sensor_control_cb(tparam.sensor_cfg, &tparam.info.pstAlgCtx.stSnsExp);
-  cmos_get_sensor_calibration(tparam.sensor_cfg, &tparam.info.calib);
+  cmos_get_sensor_calibration(tparam.sensor_cfg, v4l2_media_stream.sensor_ent, &tparam.info.calib);
 
 
   (isp_alg_iface.algEnable)(0, &tparam.info.pstAlgCtx, &tparam.info.calib);
