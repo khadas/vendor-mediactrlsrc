@@ -65,6 +65,7 @@ typedef struct {
 	bool b_svctx_enable;
 }hdmi_rx_svc_t;
 
+tv_source_input_t e_currentsource ;
 static hdmi_rx_svc_t *g_t_svctx =NULL;
 static int client_sockfd = -1;
 
@@ -116,7 +117,7 @@ static void *process_socket_thread(void *arg)
 	log_debug("enter process_socket_thread\n");
 	int r;
 	char recv_buffer[32] = {0};
-	tv_source_input_t e_currentsource ;
+	// tv_source_input_t e_currentsource ;
 	char *hdmirxsrc;
 	hdmirxsrc = getenv("HDMISRC");
 	log_debug("hdmirxsrc is %s\n",hdmirxsrc);
@@ -236,6 +237,8 @@ static hdmi_rx_svc_t *hdmi_rx_svctx_init()
 
 static void Signalhandler(int sig){
 	log_debug("enter hdmictrl Signalhandler: %d\n",sig);
+	StopTv(g_t_svctx->tv_client_wrapper, e_currentsource);
+	ReleaseInstance(&g_t_svctx->tv_client_wrapper);
 	unlink(HDMIRX_SERVER_SOCKET);
 	exit(0);
 }
