@@ -106,6 +106,34 @@ int get_video_type(const char* devname, struct v4l2_capability* cap)
     return 0;
 }
 
+// Get the default tvin_port for HDMI RX and Screen device
+int get_default_tvin_port(const char** devname){
+  int ret = 0;
+  struct v4l2_capability cap;
+  printf("devname : %s\n", *devname);
+
+  ret = get_video_type(*devname, &cap);
+  if (0 != ret) {
+    printf("Error: get video type failed: %s\n", *devname);
+    return -1;
+  }
+
+  // HDMI RX
+  if (0 == strcmp("vdinvideo",(char*)(cap.driver))) {
+    // VPP0(Video)
+    return 0;
+  }
+  // screen
+  if (0 == strcmp("amlvideo2",(char*)(cap.driver))) {
+    // VPP0(OSD+Video)
+    return 0x11000001;
+  }
+
+  // VPP0(OSD+Video)
+  return 0x11000001;
+}
+
+
 int aml_v4l2src_connect(char** devname) {
 
   int ret = 0;
