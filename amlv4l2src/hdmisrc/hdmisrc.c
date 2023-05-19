@@ -64,76 +64,89 @@ static int client_sockfd = -1;
 
 static void
 hdmi_src_obtain_devname(const char *filepath) {
+    log_debug("enter");
 
     if (!access(server_socket, F_OK)) {
-    unlink(server_socket);
-  }
-  log_debug("enter hdmi_src_obtain_devname \n");
-  pid_t pid;
-  pid = fork();
-  if (pid < 0) {
-    log_debug("fork error");
-    exit(1);
-  }
-  log_debug("hdmi_src_obtain_devname, pid=%d \n", pid);
-  if (pid == 0) {
-    prctl(PR_SET_PDEATHSIG, SIGKILL);
-    /* call execl to startup hdmienable */
-    log_debug("ready to execl /usr/bin/hdmictrl, pid=%d \n", pid);
-    execl("/usr/bin/hdmictrl", "hdmictrl", NULL);
-    log_debug("execl /usr/bin/hdmictrl ok \n");
-  }
-  log_debug("hdmi_src_obtain_devname end, pid=%d \n", pid);
+        unlink(server_socket);
+    }
+    pid_t pid;
+    pid = fork();
+    if (pid < 0) {
+        log_debug("fork error");
+        exit(1);
+    }
+    log_debug("%s, pid=%d", __FUNCTION__, pid);
+    if (pid == 0) {
+        prctl(PR_SET_PDEATHSIG, SIGKILL);
+        /* call execl to startup hdmienable */
+        log_debug("ready to execl /usr/bin/hdmictrl, pid=%d", pid);
+        execl("/usr/bin/hdmictrl", "hdmictrl", NULL);
+        log_debug("execl /usr/bin/hdmictrl ok");
+    }
+    log_debug("%s end, pid=%d", __FUNCTION__, pid);
 
-  while (true) {
-    if (!access(server_socket, F_OK))
-      break;
-    else
-      continue;
-  }
+    while (true) {
+        if (!access(server_socket, F_OK))
+            break;
+        else
+            continue;
+    }
 
-  client_sockfd = udp_sock_create(server_socket);//need add
+    client_sockfd = udp_sock_create(server_socket);//need add
+    log_debug("exit");
 }
 
 char *
 hdmi_src_initialize(const char* filepath) {
-  log_debug("enter  hdmi_src_initialize \n");
+    log_debug("enter");
 
-  hdmi_src_obtain_devname(filepath);
-  char send_buffer[32] = {0};
-  strcpy(send_buffer, "connect");
-  udp_sock_send(client_sockfd, send_buffer, sizeof(send_buffer));
-  log_debug("send_buffer: %s", send_buffer);
+    system("ps -aux | grep hdmictrl");
 
-  return NULL;
+    hdmi_src_obtain_devname(filepath);
+    char send_buffer[32] = {0};
+    strcpy(send_buffer, "connect");
+    log_debug("send_buffer:fd:%d buf:%s", client_sockfd, send_buffer);
+    udp_sock_send(client_sockfd, send_buffer, sizeof(send_buffer));
+
+    log_debug("exit");
+    return NULL;
 }
 
 void
 hdmi_src_finalize() {
-  log_debug("finalize\n");
+    log_debug("enter");
 
-  char send_buffer[32] = {0};
-  strcpy(send_buffer, "disconnect");
-  udp_sock_send(client_sockfd, send_buffer, sizeof(send_buffer));
-  log_debug("send_buffer: %s", send_buffer);
-  return;
+    system("netstat -an | grep hdmi-rx");
+
+    char send_buffer[32] = {0};
+    strcpy(send_buffer, "disconnect");
+    log_debug("send_buffer:fd:%d buf:%s", client_sockfd, send_buffer);
+    udp_sock_send(client_sockfd, send_buffer, sizeof(send_buffer));
+
+    close(client_sockfd); // free connection
+    log_debug("close: %d", client_sockfd);
+
+    log_debug("exit");
+    return;
 }
 
 void
 hdmi_src_start() {
-  log_debug("enter  hdmi_src_start \n");
+    log_debug("enter");
 
-  char recv_buffer[32] = {0};
-  udp_sock_recv(client_sockfd, recv_buffer, sizeof(recv_buffer));
-  log_debug("recv_buffer: %s", recv_buffer);
-  return;
+    char recv_buffer[32] = {0};
+    udp_sock_recv(client_sockfd, recv_buffer, sizeof(recv_buffer));
+    log_debug("recv_buffer: %s", recv_buffer);
+
+    log_debug("exit");
+    return;
 }
 
 void
 hdmi_src_stop() {
-  log_debug("enter  hdmi_src_stop \n");
-  log_debug("stop ...\n");
-  return;
+    log_debug("enter");
+    log_debug("exit");
+    return;
 }
 
 

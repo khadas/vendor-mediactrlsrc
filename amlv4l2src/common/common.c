@@ -59,10 +59,11 @@ int udp_sock_create(const char* server_socket_path) {
 
   memset(&server_unix, 0, sizeof(server_unix));
   server_unix.sun_family = AF_UNIX;
-  strcpy(server_unix.sun_path, server_socket_path);
+  strncpy(server_unix.sun_path, server_socket_path, sizeof(server_unix.sun_path)-1);
+
   int len = offsetof(struct sockaddr_un, sun_path) + strlen(server_unix.sun_path);
   if (connect(sockfd, (struct sockaddr *)&server_unix, len) < 0) {
-    log_error("connect ...");
+    log_error("[%s] connect ...", server_unix.sun_path);
     return -1;
   }
 
