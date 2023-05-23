@@ -42,10 +42,13 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
+#include <time.h>
 
 #include "mediactrl_log.h"
 
 int udp_sock_create(const char* server_socket_path) {
+  int retry_max = 5;
+  int retry = 0;
   if (NULL == server_socket_path)
     return -1;
 
@@ -62,8 +65,16 @@ int udp_sock_create(const char* server_socket_path) {
   strncpy(server_unix.sun_path, server_socket_path, sizeof(server_unix.sun_path)-1);
 
   int len = offsetof(struct sockaddr_un, sun_path) + strlen(server_unix.sun_path);
-  if (connect(sockfd, (struct sockaddr *)&server_unix, len) < 0) {
+    struct timespec currentTime;
+    clock_gettime(CLOCK_REALTIME, &currentTime);
+  log_debug("[%ld][%s] start connect", currentTime.tv_nsec, server_unix.sun_path);
+  while (connect(sockfd, (struct sockaddr *)&server_unix, len) < 0 && retry < retry_max) {
     log_error("[%s] connect ...", server_unix.sun_path);
+    usleep(50000);
+    retry++;
+  }
+  if (retry == retry_max) {
+    log_error("[%s] connect failed", server_unix.sun_path);
     return -1;
   }
 

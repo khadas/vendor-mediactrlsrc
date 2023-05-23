@@ -51,6 +51,7 @@
 #include <ctype.h>
 #include <pthread.h>
 #include <signal.h>
+#include <time.h>
 #include "TvClientWrapper.h"
 #include "CTvClientLog.h"
 
@@ -188,7 +189,10 @@ static void hdmi_rx_svctx_perform_connect(hdmi_rx_svc_t *g_t_svctx)
 	  perror("bind error");
 	  exit(1);
 	}
-	log_debug("UNIX domain socket (%s) bound", server_unix.sun_path);
+	struct timespec currentTime;
+	clock_gettime(CLOCK_REALTIME, &currentTime);
+
+	log_debug("[%ld]UNIX domain socket (%s) bound", currentTime.tv_nsec, server_unix.sun_path);
 
 	if (listen(listen_fd, 16) < 0) {
 	  perror("listen error");
@@ -196,7 +200,8 @@ static void hdmi_rx_svctx_perform_connect(hdmi_rx_svc_t *g_t_svctx)
 	}
 
 	client_unix_len = sizeof(client_unix);
-	log_debug("Accepting connections,get the client_unix_len: %d",client_unix_len);
+	clock_gettime(CLOCK_REALTIME, &currentTime);
+	log_debug("[%ld]Accepting connections,get the client_unix_len: %d",currentTime.tv_nsec, client_unix_len);
 
 	if ((connfd = accept(listen_fd, (struct sockaddr *)&client_unix, &client_unix_len)) < 0) {
 	  perror("accept error");
