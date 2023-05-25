@@ -41,11 +41,50 @@
 #include <linux/videodev2.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <stdbool.h>
 #include "amlsrc.h"
+
+#define V4L2_CID_USER_EXT_CAPTURE_BASE (V4L2_CID_USER_BASE + 0x2100)
+#define V4L2_CID_EXT_CAPTURE_DIVIDE_FRAMERATE (V4L2_CID_USER_EXT_CAPTURE_BASE + 8)
+#define MAX_DEV_LEN 32
 
 typedef void (*Func) (aml_src_t *);
 
 aml_src_t amlsrc;
+char g_devname[MAX_DEV_LEN];
+bool g_change_framerate = false;
+
+static int change_divide_framerate(int value) {
+/* Set 2 as drop 50%; set 0/1 as no dropping */
+	int ret;
+	struct v4l2_control	control;
+  printf("%s, L%d, dev %s, change_frame %d\n", __FUNCTION__, __LINE__, g_devname, g_change_framerate);
+  if ((g_devname[0] == '\0')
+      || (false == g_change_framerate)
+    ) {
+    return 0;
+  }
+
+  int fd = open(g_devname, O_RDWR | O_NONBLOCK);
+    if (fd < 0)
+    {
+        printf("open001 \"%s\" error\n", g_devname);
+        return -1;
+    }
+	control.id = V4L2_CID_EXT_CAPTURE_DIVIDE_FRAMERATE;
+	control.value = value;
+
+	ret = ioctl(fd, VIDIOC_S_CTRL, &control);
+	if (ret) {
+		printf("%d VIDIOC_G_EXT_CTRLS fail :%d\n", __LINE__, ret);
+    close(fd);
+		return -1;
+	}
+  printf("%s L%d Set framerate div %d success\n", __FUNCTION__, __LINE__, value);
+  close(fd);
+	return ret;
+}
+
 
 int aml_v4l2src_get_method(aml_src_t *pamlsrc, const char* devtype) {
   if (pamlsrc->initialize &&
@@ -178,6 +217,12 @@ int aml_v4l2src_connect(char** devname) {
     // hdmi rx：
   if (0 == strcmp("vdinvideo",(char*)(cap.driver))) {
       if (0 == aml_v4l2src_get_method(&amlsrc, "hdmi")) {
+        int dev_len = strlen(*devname) + 1;
+        dev_len = (dev_len > MAX_DEV_LEN) ? MAX_DEV_LEN : dev_len;
+        memcpy(g_devname, *devname, dev_len);
+        g_change_framerate = true;
+        change_divide_framerate(2);
+
         // *dev_type = 3;
         if (amlsrc.initialize)
           amlsrc.initialize(*devname);
@@ -203,6 +248,8 @@ int aml_v4l2src_connect(char** devname) {
 void aml_v4l2src_disconnect() {
   if (amlsrc.finalize)
     amlsrc.finalize();
+  change_divide_framerate(1);
+  g_change_framerate = false;
 }
 
 
