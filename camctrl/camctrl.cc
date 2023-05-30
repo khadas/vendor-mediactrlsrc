@@ -51,6 +51,7 @@
 #include "v4l2subdev.h"
 #include "v4l2videodev.h"
 #include "mediaApi.h"
+#include "lens_config.h"
 
 #include "staticPipe.h"
 #include "ispMgr.h"
@@ -103,6 +104,7 @@ struct thread_param {
   v4l2buffer_info_t buffer_isp_param;
 
   struct sensorConfig *sensor_cfg;
+  struct lensConfig   *lens_cfg;
 
   /* format related */
   uint32_t width;
@@ -583,7 +585,11 @@ static void isp_alg_param_init() {
     log_error("match sensor config failed");
     return;
   }
-
+  tparam.lens_cfg = matchLensConfig(&v4l2_media_stream);
+  if (tparam.lens_cfg != NULL) {
+      lens_set_entity(tparam.lens_cfg, v4l2_media_stream.lens_ent);
+      lens_control_cb(tparam.lens_cfg, &tparam.info.pstAlgCtx.stLensFunc);
+  }
 #ifdef  WDR_ENABLE
   cmos_set_sensor_entity(tparam.sensor_cfg, v4l2_media_stream.sensor_ent, 1);
 #else

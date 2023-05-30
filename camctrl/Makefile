@@ -3,7 +3,7 @@ CFLAGS += $(EXTRA_CFLAGS)
 CFLAGS += -D_FORTIFY_SOURCE=2 -Wno-stringop-truncation
 CFLAGS += -Wall -Werror -Werror=jump-misses-init -fPIC -O2
 CFLAGS = -I../include
-LDLIBS += -lpthread -lmediaAPI -ltuning -lispaml -lm -ldl
+LDLIBS += -lpthread -lmediaAPI -ltuning -lispaml -lm -ldl -llens
 
 SRCS = \
 	camctrl.cc
