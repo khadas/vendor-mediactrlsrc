@@ -883,7 +883,19 @@ static void parse_opt(int argc, char *argv[]) {
   }
 }
 
+static void Signalhandler(int sig)
+{
+  log_debug("enter camctrl Signalhandler: %d",sig);
+  unlink(server_socket);
+  close(connected_sockfd);
+  log_debug("exit camctrl Signalhandler: %d",sig);
+  exit(0);
+}
+
 int main(int argc, char *argv[]) {
+
+  signal(SIGINT, Signalhandler);
+  signal(SIGTERM, Signalhandler);
 
   parse_opt(argc, argv);
 
