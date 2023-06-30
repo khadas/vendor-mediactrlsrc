@@ -72,7 +72,7 @@ cam_src_obtain_devname(const char *filepath) {
     exit(1);
   }
   if (pid == 0) {
-    prctl(PR_SET_PDEATHSIG, SIGKILL);
+    prctl(PR_SET_PDEATHSIG, SIGTERM);
     /* call execl to startup camctrl */
     execl("/usr/bin/camctrl", "camctrl", "-m", filepath, "-c", "2", NULL);
   }

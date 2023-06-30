@@ -789,7 +789,9 @@ static void *isp_alg_thread(void *arg) {
 
   int vf_cnt = 0;
   while (true) {
+    pthread_mutex_lock(&tparam->mutex);
     if (tparam->streaming) {
+      pthread_mutex_unlock(&tparam->mutex);
       vf_cnt++;
       if (vf_cnt % 2 == 0) {
         isp_alg_process_one(tparam);
@@ -805,6 +807,7 @@ static void *isp_alg_thread(void *arg) {
       start = get_current_time_msec();
 #endif
     } else {
+      pthread_mutex_unlock(&tparam->mutex);
       log_debug("streamoff ...");
       break;
     }
@@ -846,12 +849,13 @@ static void *process_socket_thread(void *arg) {
       if (strcmp("streamon", recv_buffer) == 0) {
         pthread_mutex_lock(&tparam->mutex);
         tparam->streaming = true;
-        pthread_mutex_unlock(&tparam->mutex);
         pthread_cond_signal(&tparam->cond);
+        pthread_mutex_unlock(&tparam->mutex);
         log_debug("receive streamon notification");
       } else if (strcmp("streamoff", recv_buffer) == 0) {
         pthread_mutex_lock(&tparam->mutex);
         tparam->streaming = false;
+        pthread_cond_signal(&tparam->cond);
         pthread_mutex_unlock(&tparam->mutex);
         log_debug("receive streamoff notification");
         break;
