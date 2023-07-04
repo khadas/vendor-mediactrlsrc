@@ -871,21 +871,25 @@ static void *process_socket_thread(void *arg) {
 
 static void parse_opt(int argc, char *argv[]) {
   int opt;
-  while ((opt = getopt(argc, argv, "m:c:t:")) != -1) {
+  while ((opt = getopt(argc, argv, "m:c:t:s:")) != -1) {
     switch (opt) {
       case 'm': /* media device name (/dev/media0) */
         media_device_name = optarg;
-        if (strstr(media_device_name, "media0")) {
-          server_socket = DEFAULT_SERVER_SOCKET0;
-        } else if (strstr(media_device_name, "media1")) {
-          server_socket = DEFAULT_SERVER_SOCKET1;
-        }
+        // if (strstr(media_device_name, "media0")) {
+        //   server_socket = DEFAULT_SERVER_SOCKET0;
+        // } else if (strstr(media_device_name, "media1")) {
+        //   server_socket = DEFAULT_SERVER_SOCKET1;
+        // }
         log_debug("media device name: %s", media_device_name);
         break;
       case 'c': /* camera number (0,1) */
         camera_num = atoi(optarg);
         break;
       case 't':
+        break;
+      case 's':
+        server_socket = optarg;
+        log_debug("Server socket: %s",server_socket);
         break;
       default:
         exit(1);

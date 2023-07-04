@@ -181,7 +181,7 @@ int aml_v4l2src_connect(char** devname) {
 
   // mipi cam：
   if (0 == strncmp("/dev/media",(char*)(*devname),10)) {
-    printf("Current is t7c mipi camera!\n");
+    printf("Current is t7c mediactrl camera!\n");
         // aml_v4l2src_get_method(&amlsrc, "cam");
          if (0 == aml_v4l2src_get_method(&amlsrc, "cam")) {
             // *dev_type = 2;//as t7c mipi camera
