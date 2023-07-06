@@ -215,7 +215,7 @@ int aml_v4l2src_connect(char** devname) {
   }
 
     // hdmi rx：
-  if (0 == strcmp("vdinvideo",(char*)(cap.driver))) {
+  if (0 == strcmp("vdinvideo",(char*)(cap.driver)) || 0 == strcmp("vdin_video",(char*)(cap.driver))) {
       if (0 == aml_v4l2src_get_method(&amlsrc, "hdmi")) {
         int dev_len = strlen(*devname) + 1;
         dev_len = (dev_len > MAX_DEV_LEN) ? MAX_DEV_LEN : dev_len;
