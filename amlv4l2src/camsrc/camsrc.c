@@ -300,6 +300,15 @@ cam_src_stop() {
   strcpy(recv_buffer, "streamoff");
   udp_sock_send(client_sockfd, recv_buffer, sizeof(recv_buffer));
   log_debug("stop ...");
+  memset(recv_buffer, 0, sizeof(recv_buffer));
+  udp_sock_recv(client_sockfd, recv_buffer, sizeof(recv_buffer));
+  if (0 == strcmp("streamoff_done", recv_buffer)) {
+    log_debug("recv streamoff_done");
+    return;
+  }else{
+    log_debug("interrupt, recv : %s ", recv_buffer);
+  }
+
   return;
 }
 

@@ -42,11 +42,19 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <linux/media.h>
+#include <sys/ioctl.h>
+#include <errno.h>
+#include <dirent.h>
+#include <sys/sysmacros.h>
+#include <sys/socket.h>
 #include "amlsrc.h"
 
 #define V4L2_CID_USER_EXT_CAPTURE_BASE (V4L2_CID_USER_BASE + 0x2100)
 #define V4L2_CID_EXT_CAPTURE_DIVIDE_FRAMERATE (V4L2_CID_USER_EXT_CAPTURE_BASE + 8)
 #define MAX_DEV_LEN 32
+#define MEDIA_DEVICE_PATH "/dev"
+#define DEVNAME_SIZE 512
 
 typedef void (*Func) (aml_src_t *);
 
@@ -172,6 +180,86 @@ int get_default_tvin_port(const char** devname){
   return 0x11000001;
 }
 
+static int get_correspond_media_node(const char *video_filepath, char *media_filepath){
+    //get major deice num and minor num
+    struct stat device_stat;
+    int ret = 0;
+    unsigned int video_major_num = 0;
+    unsigned int video_minor_num = 0;
+    ret = stat(video_filepath, &device_stat);
+    if (ret == 0) {
+        video_major_num = major(device_stat.st_rdev);
+        video_minor_num = minor(device_stat.st_rdev);
+    }else{
+        printf("%s : Failed to get device %s information\n", __func__, video_filepath);
+        return -1;
+    }
+
+    //enum mdeia device
+    DIR* media_dir = opendir(MEDIA_DEVICE_PATH);
+    if (!media_dir) {
+        printf("%s : Failed to open device dir\n", __func__ );
+        return -1;
+    }
+
+    struct dirent* entry;
+    while (( entry = readdir(media_dir)) != NULL) {
+        if ( entry->d_type == DT_CHR && strncmp(entry->d_name, "media", 5) ==0 ) {
+            char media_device[DEVNAME_SIZE] = {0};
+            snprintf(media_device, sizeof(media_device), "%s/%s", MEDIA_DEVICE_PATH, entry->d_name);
+            printf("%s: get media device %s\n", __func__, media_device );
+            struct media_entity_desc info = {0};
+            int media_fd = 0;
+            int ret = 0;
+            media_fd = open(media_device, O_RDONLY);
+            if (media_fd < 0) {
+                printf("%s: Can't open media device %s\n",
+                        __func__, media_device);
+                continue;
+            }
+
+            ret = ioctl(media_fd, MEDIA_IOC_DEVICE_INFO, &info);
+            if (ret < 0) {
+                printf("%s: Unable to retrieve media device "
+                    "information for device %s \n", __func__,
+                    media_device);
+                close(media_fd);
+                continue;
+            }
+
+            for (unsigned int id = 0, ret = 0; ; id = info.id) {
+                memset(&info, 0, sizeof(info));
+                info.id = id | MEDIA_ENT_ID_FLAG_NEXT;
+
+                ret = ioctl(media_fd, MEDIA_IOC_ENUM_ENTITIES, &info);
+                if (ret) {
+                    ret = errno != EINVAL ? -errno : 0;
+                    printf("%s:error failed to get entity information", __func__ );
+                    break;
+                }
+                else if ( video_major_num == info.v4l.major &&
+                          video_minor_num == info.v4l.minor )
+                {
+                    /* code */
+                    printf("%s:info(id %d, type 0x%x, name %s, links %x, v4l-major:%d, v4l2-minor:%d), ret %d\n", __func__, info.id,
+                        info.type, info.name, info.links , info.v4l.major, info.v4l.minor,  ret);
+                   // media_filepath = media_device;
+                    //memcpy(media_filepath, media_device, strlen(media_device)+1);
+                    snprintf(media_filepath, sizeof(media_device), "%s", media_device);
+                    close(media_fd);
+                    closedir(media_dir);
+                    return 0;
+                }
+
+            }
+            close(media_fd);
+        }
+
+    }
+    closedir(media_dir);
+    return -1;
+}
+
 
 int aml_v4l2src_connect(char** devname) {
 
@@ -181,7 +269,6 @@ int aml_v4l2src_connect(char** devname) {
 
   // mipi cam：
   if (0 == strncmp("/dev/media",(char*)(*devname),10)) {
-    printf("Current is t7c mediactrl camera!\n");
         // aml_v4l2src_get_method(&amlsrc, "cam");
          if (0 == aml_v4l2src_get_method(&amlsrc, "cam")) {
             // *dev_type = 2;//as t7c mipi camera
@@ -237,7 +324,27 @@ int aml_v4l2src_connect(char** devname) {
       //  *dev_type = 4;
        return 4;
   }
-  printf("unknown case (devname : %s)\n", *devname);
+
+    if (0 == strcmp("aml-camera",(char*)(cap.driver))) {
+        //enum all media node, map to video63
+        char media_filepath[DEVNAME_SIZE];
+        int ret = 0;
+        ret = get_correspond_media_node(*devname, media_filepath);
+        printf("%s: media_filepath = %s\n", __func__, media_filepath);
+        if (ret < 0) {
+            printf("%s: Error get media devnode\n", __func__);
+            return -1;
+        }
+           // *devname = media_filepath;
+            if (0 == aml_v4l2src_get_method(&amlsrc, "cam")) {
+            char *vidname = amlsrc.initialize(media_filepath);
+            printf("%s: finall dev name: %s\n", __func__, *devname);
+            return 5;
+        }
+
+  }
+
+    printf("unknown case (devname : %s)\n", *devname);
 
     // *dev_type = -1;
     return -1;

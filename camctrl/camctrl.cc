@@ -899,6 +899,12 @@ static void parse_opt(int argc, char *argv[]) {
 
 static void Signalhandler(int sig)
 {
+  char streamoff_buffer[32] = {0};
+  strcpy(streamoff_buffer, "streamoff_done");
+  int r = TEMP_FAILURE_RETRY(send(connected_sockfd, streamoff_buffer, strlen(streamoff_buffer), 0));
+  if (r < 0) {
+    log_error("send streamoff_buffer, failed");
+  }
   log_debug("enter camctrl Signalhandler: %d",sig);
   unlink(server_socket);
   close(connected_sockfd);
@@ -994,6 +1000,12 @@ int main(int argc, char *argv[]) {
   pthread_join(tparam.process_socket_tid, NULL);
   pthread_join(tid[MEDIACTRLSRC_STREAM_STATISTICS], NULL);
 
+  char streamoff_buffer[32] = {0};
+  strcpy(streamoff_buffer, "streamoff_done");
+  int m = TEMP_FAILURE_RETRY(send(connected_sockfd, streamoff_buffer, strlen(streamoff_buffer), 0));
+  if (m < 0) {
+    log_error("send streamoff_buffer, failed");
+  }
   unlink(server_socket);
   close(connected_sockfd);
   close(listen_fd);
