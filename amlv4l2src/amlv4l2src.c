@@ -166,18 +166,21 @@ int get_default_tvin_port(const char** devname){
   }
 
   // HDMI RX
-  if (0 == strcmp("vdinvideo",(char*)(cap.driver))) {
+  if (0 == strcmp("vdinvideo",(char*)(cap.driver)) || 0 == strcmp("vdin_video",(char*)(cap.driver))) {
     // VPP0(Video)
+    printf("hdmirx tvin-port use 0 \n");
     return 0;
   }
   // screen
   if (0 == strcmp("amlvideo2",(char*)(cap.driver))) {
     // VPP0(OSD+Video)
+    printf("screen tvin-port use 0x11000001 \n");
     return 0x11000001;
   }
 
   // VPP0(OSD+Video)
-  return 0x11000001;
+  printf("error tvin-port use -1 \n");
+  return -1;
 }
 
 static int get_correspond_media_node(const char *video_filepath, char *media_filepath){
