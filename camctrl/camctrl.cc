@@ -109,7 +109,7 @@ struct thread_param {
   /* format related */
   uint32_t width;
   uint32_t height;
-  uint32_t pixformat;
+  // uint32_t pixformat;
   uint32_t fmt_code;
   uint32_t wdr_mode;
 
@@ -132,7 +132,7 @@ struct thread_param {
 static struct thread_param tparam = {
   .width = 3840,
   .height = 1920,
-  .pixformat = V4L2_PIX_FMT_NV12, /* V4L2_PIX_FMT_NV12, V4L2_PIX_FMT_Y12, V4L2_PIX_FMT_SRGGB12 */
+  // .pixformat = V4L2_PIX_FMT_NV12, /* V4L2_PIX_FMT_NV12, V4L2_PIX_FMT_Y12, V4L2_PIX_FMT_SRGGB12 */
 #ifdef WDR_ENABLE
   .fmt_code = MEDIA_BUS_FMT_SBGGR10_1X10, /* MEDIA_BUS_FMT_SRGGB12_1X12 */
   .wdr_mode = WDR_MODE_2To1_FRAME, /* WDR_MODE_2To1_LINE */
@@ -382,7 +382,7 @@ int media_stream_config(media_stream_t *stream) {
   memset(&stream_cfg, 0, sizeof(stream_configuration_t));
   stream_cfg.format.width = tparam.width;
   stream_cfg.format.height = tparam.height;
-  stream_cfg.format.fourcc = tparam.pixformat;
+  // stream_cfg.format.fourcc = tparam.pixformat;
   stream_cfg.format.code = tparam.fmt_code;;
   stream_cfg.format.nplanes = 1;
 
