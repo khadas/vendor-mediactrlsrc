@@ -94,7 +94,7 @@ struct thread_info {
   /* sem_t p_sem; */
 
   /* aml isp algorithm related */
-  AIspCalibrations calib;
+  aisp_calib_info_t calib;
   AML_ALG_CTX_S pstAlgCtx;
 };
 
