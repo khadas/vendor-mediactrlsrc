@@ -66,6 +66,7 @@ typedef struct {
     bool b_svctx_enable;
     bool b_tv_released;
     pthread_mutex_t tvclient_mutex;
+    bool b_tv_fake_stable;
 }hdmi_rx_svc_t;
 
 tv_source_input_t e_currentsource ;
@@ -76,11 +77,37 @@ static void _send_signal_stable()
 {
     char send_buffer[32] = {0};
     strcpy(send_buffer, "sigstable");
-    log_debug("send_buffer: %s", send_buffer);
+    log_debug("send_buffer: %s, errno %d [%d]", send_buffer, errno, ECONNRESET);
+    if (errno != ECONNRESET || g_t_svctx->b_tv_fake_stable == false) {
     int ret = TEMP_FAILURE_RETRY(send(g_t_svctx->connect_socker_fd, send_buffer, strlen(send_buffer), 0));
     if (ret < 0) {
         log_debug("send sigstable fail");
     }
+    g_t_svctx->b_tv_fake_stable = true;
+    }
+}
+
+static  void _hdmi_rc_svctx_release()
+{
+    if (!g_t_svctx) {
+        log_debug("g_t_svctx null");
+        return;
+    }
+
+    if (!g_t_svctx->b_tv_released) {
+        StopTv(g_t_svctx->tv_client_wrapper, e_currentsource);
+        log_debug("stoptv is ok");
+        ReleaseInstance(&g_t_svctx->tv_client_wrapper);
+        log_debug("ReleaseInstance is ok");
+    }
+
+    g_t_svctx->b_tv_released = true;
+    close(g_t_svctx->connect_socker_fd);
+    close(g_t_svctx->listen_fd);
+    unlink(HDMIRX_SERVER_SOCKET);
+    g_t_svctx->b_svctx_enable = false;
+
+    log_debug("exit _hdmi_rc_svctx_release");
 }
 
 static void TvEventCallback(event_type_t eventType, void *eventData)
@@ -112,7 +139,6 @@ static void *process_socket_thread(void *arg)
     log_debug("enter");
     int r;
     char recv_buffer[32] = {0};
-    // tv_source_input_t e_currentsource ;
     char *hdmirxsrc;
     hdmirxsrc = getenv("HDMISRC");
     log_debug("hdmirxsrc is %s",hdmirxsrc);
@@ -143,18 +169,17 @@ static void *process_socket_thread(void *arg)
         log_debug("loop wait recv cmd");
         r = TEMP_FAILURE_RETRY(recv(g_t_svctx->connect_socker_fd, recv_buffer, sizeof(recv_buffer), 0));
         log_debug("recv_buffer = %s ",recv_buffer);
-        log_debug("r = %d ",r);
+        log_debug("r = %d errno = %d",r, errno);
 
         if (!g_t_svctx->b_svctx_enable) {
             log_debug("exit thread");
             break;
         }
 
-        if (r == 0) {
-            log_debug("connection interrupted");
-            continue;
-        }
-        if (strcmp("connect", recv_buffer) == 0) {
+        if ((r == 0) || (r == -1L) || (strcmp("disconnect", recv_buffer) == 0)) {
+            _hdmi_rc_svctx_release();
+            break;
+        } else if (strcmp("connect", recv_buffer) == 0) {
             log_debug("Enter connect_hdmi");
             pthread_mutex_lock(&g_t_svctx->tvclient_mutex);
             StartTv(g_t_svctx->tv_client_wrapper, e_currentsource);
@@ -162,23 +187,6 @@ static void *process_socket_thread(void *arg)
             g_t_svctx->b_tv_released = false;
             pthread_mutex_unlock(&g_t_svctx->tvclient_mutex);
             log_debug("startv is ok");
-        } else if (strcmp("disconnect", recv_buffer) == 0) {
-            log_debug("prepare enter disconnect_hdmi %d",g_t_svctx->b_tv_released);
-            pthread_mutex_lock(&g_t_svctx->tvclient_mutex);
-            log_debug("prepare enter disconnect_hdmi %d",g_t_svctx->b_tv_released);
-            if (g_t_svctx->b_tv_released) {
-                log_debug("TV resource already released");
-                pthread_mutex_unlock(&g_t_svctx->tvclient_mutex);
-                continue;
-            }
-            StopTv(g_t_svctx->tv_client_wrapper, e_currentsource);
-            log_debug("Enter disconnect_hdmi");
-            log_debug("stoptv is ok");
-            ReleaseInstance(&g_t_svctx->tv_client_wrapper);
-            g_t_svctx->b_tv_released = true;
-            pthread_mutex_unlock(&g_t_svctx->tvclient_mutex);
-            log_debug("Exit disconnect_hdmi");
-            break;
         } else {
             log_debug("[%s] not supported message ...", __FUNCTION__);
             continue;
@@ -252,6 +260,7 @@ static hdmi_rx_svc_t *hdmi_rx_svctx_init()
         return NULL;
     }
 
+    g_t_svctx->b_tv_fake_stable = false;
     log_debug("prepare get the GetInstance");
     g_t_svctx->tv_client_wrapper = GetInstance();
     if (!g_t_svctx->tv_client_wrapper) {
@@ -270,41 +279,24 @@ static hdmi_rx_svc_t *hdmi_rx_svctx_init()
     return g_t_svctx;
 }
 
-static  void _hdmi_rc_svctx_release()
+static void Signalhandler(int sig)
 {
-    if (!g_t_svctx) {
-        log_debug("g_t_svctx null");
-        return;
-    }
-
-    if (!g_t_svctx->b_tv_released) {
-        StopTv(g_t_svctx->tv_client_wrapper, e_currentsource);
-        ReleaseInstance(&g_t_svctx->tv_client_wrapper);
-    }
-
-    close(g_t_svctx->connect_socker_fd);
-    close(g_t_svctx->listen_fd);
-    unlink(HDMIRX_SERVER_SOCKET);
-}
- static void Signalhandler(int sig)
- {
     log_debug("enter hdmictrl Signalhandler: %d",sig);
-    pthread_mutex_lock(&g_t_svctx->tvclient_mutex);
-    //Send Fake signal stable to unlock start() wait.
-    _send_signal_stable();
-    _hdmi_rc_svctx_release();
 
-    g_t_svctx->b_tv_released = true;
-    g_t_svctx->b_svctx_enable = false;
-    log_debug("exit hdmictrl Signalhandler: %d",sig);
-    pthread_mutex_unlock(&g_t_svctx->tvclient_mutex);
+    //Send Fake signal stable to unlock start() wait.
+    if (g_t_svctx->b_tv_fake_stable == false) {
+        _send_signal_stable();
+    }
+
+    //Wait for the client's thread to exit
+    pthread_join(g_t_svctx->t_socket_thread, NULL);
 
     exit(0);
- }
+}
 
 int main(int argc, char **argv)
 {
-    signal(SIGINT, Signalhandler);
+    signal(SIGINT, SIG_IGN); // Ignore the SIGINT signal
     signal(SIGTERM, Signalhandler);
 
     log_debug("enter, prepare enter hdmi_rx_svctx_init");
@@ -326,11 +318,8 @@ int main(int argc, char **argv)
     }
 
     pthread_join(g_t_svctx->t_socket_thread, NULL);
-    log_debug("out process_socket_thread");
+    log_debug("exit process_socket_thread");
 
-    pthread_mutex_lock(&g_t_svctx->tvclient_mutex);
-    _hdmi_rc_svctx_release();
-    pthread_mutex_unlock(&g_t_svctx->tvclient_mutex);
     if (g_t_svctx) {
        free(g_t_svctx);
     }

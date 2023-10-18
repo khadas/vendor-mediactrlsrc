@@ -77,7 +77,7 @@ hdmi_src_obtain_devname(const char *filepath) {
     }
     log_debug("%s, pid=%d", __FUNCTION__, pid);
     if (pid == 0) {
-        prctl(PR_SET_PDEATHSIG, SIGKILL);
+        // prctl(PR_SET_PDEATHSIG, SIGKILL);
         /* call execl to startup hdmienable */
         log_debug("ready to execl /usr/bin/hdmictrl, pid=%d", pid);
         execl("/usr/bin/hdmictrl", "hdmictrl", NULL);
@@ -122,6 +122,7 @@ hdmi_src_finalize() {
     strcpy(send_buffer, "disconnect");
     log_debug("send_buffer:fd:%d buf:%s", client_sockfd, send_buffer);
     udp_sock_send(client_sockfd, send_buffer, sizeof(send_buffer));
+    log_debug("send disconnect ok");
 
     close(client_sockfd); // free connection
     log_debug("close: %d", client_sockfd);
@@ -132,11 +133,12 @@ hdmi_src_finalize() {
 
 void
 hdmi_src_start() {
+    int r = 0;
     log_debug("enter");
 
     char recv_buffer[32] = {0};
-    udp_sock_recv(client_sockfd, recv_buffer, sizeof(recv_buffer));
-    log_debug("recv_buffer: %s", recv_buffer);
+    r = recv(client_sockfd, recv_buffer, sizeof(recv_buffer),0);
+    log_debug("recv_buffer: %s, r %d, errno %d", recv_buffer, r ,errno);
 
     log_debug("exit");
     return;
