@@ -268,7 +268,7 @@ int aml_v4l2src_connect(char** devname) {
 
   int ret = 0;
   struct v4l2_capability cap;
-  printf("devname : %s\n", *devname);
+  printf("[API:%s:%d]Enter, devname : %s\n", __func__, __LINE__, *devname);
 
   // mipi cam：
   if (0 == strncmp("/dev/media",(char*)(*devname),10)) {
@@ -291,17 +291,19 @@ int aml_v4l2src_connect(char** devname) {
     printf("Error: get video type failed: %s\n", *devname);
     return -1;
   }
-    printf("strcmp cap.driver: %s\n", cap.driver);
+  printf("strcmp cap.driver: %s\n", cap.driver);
 
     // usb cam：
   if (0 == strcmp("uvcvideo",(char*)(cap.driver))) {
-        // *dev_type = 0;
-        return 0;  //as usb
+    printf("[API:%s:%d]Exit, USB camera\n", __func__, __LINE__);
+    // *dev_type = 0;
+    return 0;  //as usb
   }
     // mipi cam：
   if (0 == strcmp("ARM-camera-isp",(char*)(cap.driver))) {
-        // *dev_type = 1; //as t7 mipi camera
-        return 1;
+    printf("[API:%s:%d]Exit, ARM-camera-isp\n", __func__, __LINE__);
+    // *dev_type = 1; //as t7 mipi camera
+    return 1;
   }
 
     // hdmi rx：
@@ -318,58 +320,66 @@ int aml_v4l2src_connect(char** devname) {
           amlsrc.initialize(*devname);
         else
           printf("Amlsrc no init interf\n");
+
+        printf("[API:%s:%d]Exit, HDMI RX\n", __func__, __LINE__);
         // aml_v4l2src_streamon();
         return 3;
       }
   }
     // hdmi tx：
   if (0 == strcmp("amlvideo2",(char*)(cap.driver))) {
-      //  *dev_type = 4;
-       return 4;
+    printf("[API:%s:%d]Exit, HDMI TX\n", __func__, __LINE__);
+    //  *dev_type = 4;
+    return 4;
   }
 
-    if (0 == strcmp("aml-camera",(char*)(cap.driver))) {
-        //enum all media node, map to video63
-        char media_filepath[DEVNAME_SIZE];
-        int ret = 0;
-        ret = get_correspond_media_node(*devname, media_filepath);
-        printf("%s: media_filepath = %s\n", __func__, media_filepath);
-        if (ret < 0) {
-            printf("%s: Error get media devnode\n", __func__);
-            return -1;
-        }
-           // *devname = media_filepath;
-            if (0 == aml_v4l2src_get_method(&amlsrc, "cam")) {
-            char *vidname = amlsrc.initialize(media_filepath);
-            printf("%s: finall dev name: %s\n", __func__, *devname);
-            return 5;
-        }
-
+  if (0 == strcmp("aml-camera",(char*)(cap.driver))) {
+      //enum all media node, map to video63
+      char media_filepath[DEVNAME_SIZE];
+      int ret = 0;
+      ret = get_correspond_media_node(*devname, media_filepath);
+      printf("%s: media_filepath = %s\n", __func__, media_filepath);
+      if (ret < 0) {
+        printf("%s: Error get media devnode\n", __func__);
+        return -1;
+      }
+        // *devname = media_filepath;
+        if (0 == aml_v4l2src_get_method(&amlsrc, "cam")) {
+        char *vidname = amlsrc.initialize(media_filepath);
+        printf("[API:%s:%d]Exit, AML ISP, finall dev name: %s\n", __func__, __LINE__, *devname);
+        return 5;
+      }
   }
 
-    printf("unknown case (devname : %s)\n", *devname);
+  printf("[API:%s:%d]Exit, unknown case (devname : %s)\n", __func__, __LINE__, *devname);
 
-    // *dev_type = -1;
-    return -1;
+  // *dev_type = -1;
+  return -1;
 
 }
 
 
 void aml_v4l2src_disconnect() {
+  printf("[API:%s:%d]Enter\n", __func__, __LINE__);
   if (amlsrc.finalize)
     amlsrc.finalize();
   change_divide_framerate(1);
   g_change_framerate = false;
+  printf("[API:%s:%d]Exit\n", __func__, __LINE__);
 }
 
 
 void aml_v4l2src_streamon() {
+  printf("[API:%s:%d]Enter\n", __func__, __LINE__);
   if (amlsrc.start)
     amlsrc.start();
+  printf("[API:%s:%d]Exit\n", __func__, __LINE__);
 }
 
 
 void aml_v4l2src_streamoff() {
+  printf("[API:%s:%d]Enter\n", __func__, __LINE__);
   if (amlsrc.stop)
     amlsrc.stop();
+  printf("[API:%s:%d]Exit\n", __func__, __LINE__);
 }

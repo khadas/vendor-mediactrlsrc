@@ -296,6 +296,8 @@ static void Signalhandler(int sig)
 
 int main(int argc, char **argv)
 {
+    (void)argc;
+    (void)argv;
     signal(SIGINT, SIG_IGN); // Ignore the SIGINT signal
     signal(SIGTERM, Signalhandler);
 

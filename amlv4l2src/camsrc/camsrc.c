@@ -55,7 +55,7 @@
 #include "mediactrl_common.h"
 #include "mediactrl_log.h"
 
-static char *server_socket = DEFAULT_SERVER_SOCKET0;
+static const char *server_socket = DEFAULT_SERVER_SOCKET0;
 static int client_sockfd = -1;
 static char vdevname_buffer[32] = {0};
 
@@ -70,13 +70,13 @@ int cam_src_select_socket(const char *filepath) {
             current max support dual mipi camera, please debug and ");
             return -2;
         }else {
-            log_debug("select socket1");
             server_socket = DEFAULT_SERVER_SOCKET1;
+            log_debug("select socket:%s", server_socket);
             return 0;
         }
     } else {
-        log_debug("select socket0");
         server_socket = DEFAULT_SERVER_SOCKET0;
+        log_debug("select socket:%s", server_socket);
         return 0;
     }
   } else {
@@ -100,10 +100,13 @@ cam_src_obtain_devname(const char *filepath) {
     log_debug("fork error");
     exit(1);
   }
+  log_debug("fork ok, pid:%d", pid);
   if (pid == 0) {
     prctl(PR_SET_PDEATHSIG, SIGTERM);
     /* call execl to startup camctrl */
+    log_debug("execl /usr/bin/camctrl");
     execl("/usr/bin/camctrl", "camctrl", "-m", filepath, "-c", "2", "-s", server_socket, NULL);
+    log_debug("execl /usr/bin/camctrl done");
   }
 
   while (true) {
@@ -116,7 +119,9 @@ cam_src_obtain_devname(const char *filepath) {
   /* temporarily */
   usleep(200000);
 
+  log_debug("udp_sock_create");
   client_sockfd = udp_sock_create(server_socket);
+  log_debug("udp_sock_recv");
   udp_sock_recv(
     client_sockfd,
     vdevname_buffer,

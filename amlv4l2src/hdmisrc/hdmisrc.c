@@ -59,11 +59,12 @@
 #define MSG_BUFFER_SIZE   30
 #define MSG_NUM       100
 
-static char *server_socket = hdmictrl_SERVER_SOCKET;
+static const char *server_socket = hdmictrl_SERVER_SOCKET;
 static int client_sockfd = -1;
 
 static void
 hdmi_src_obtain_devname(const char *filepath) {
+    (void)filepath;
     log_debug("enter");
 
     if (!access(server_socket, F_OK)) {

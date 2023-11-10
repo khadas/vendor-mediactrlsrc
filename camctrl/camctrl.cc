@@ -61,7 +61,7 @@
 static int connected_sockfd = -1;
 
 static char *media_device_name = NULL;
-static char *server_socket = DEFAULT_SERVER_SOCKET0;
+static const char *server_socket = DEFAULT_SERVER_SOCKET0;
 static struct media_device *media_dev = NULL;
 static int camera_num = 1;
 
@@ -130,6 +130,10 @@ struct thread_param {
  * set default value
  */
 static struct thread_param tparam = {
+  .buffer_isp_stats={0},
+  .buffer_isp_param={0},
+  .sensor_cfg = NULL,
+  .lens_cfg = NULL,
   .width = 3840,
   .height = 1920,
   // .pixformat = V4L2_PIX_FMT_NV12, /* V4L2_PIX_FMT_NV12, V4L2_PIX_FMT_Y12, V4L2_PIX_FMT_SRGGB12 */
@@ -146,7 +150,9 @@ static struct thread_param tparam = {
 
   .mutex = PTHREAD_MUTEX_INITIALIZER,
   .cond = PTHREAD_COND_INITIALIZER,
+  .process_socket_tid = 0,
   .streaming = false,
+  .info = {0},
 };
 
 /*
@@ -913,9 +919,10 @@ static void Signalhandler(int sig)
 }
 
 int main(int argc, char *argv[]) {
-
   signal(SIGINT, Signalhandler);
   signal(SIGTERM, Signalhandler);
+
+  log_debug("[%s:%s:%d]\n", __FILE__, __func__, __LINE__);
 
   parse_opt(argc, argv);
 
