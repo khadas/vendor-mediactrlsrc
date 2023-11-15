@@ -1,5 +1,4 @@
 TARGET = hdmictrl
-SRCS = hdmictrl.c
 EXTRA_CFLAGS += ""
 CFLAGS = -I../include
 CFLAGS += $(EXTRA_CFLAGS) -Wno-stringop-truncation
@@ -7,4 +6,13 @@ LDFLAGS += -L../
 LDLIBS += -lm -lrt -lpthread -ltvclient
 
 
-include ../makefile.inc
+SRCS = \
+	hdmictrl.cc
+
+OBJDIR = objs
+OBJS = $(patsubst %.cc,$(OBJDIR)/%.o,$(SRCS))
+
+
+
+include ../makefile_bin.inc
+
