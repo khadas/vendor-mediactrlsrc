@@ -26,10 +26,11 @@ $(TARGET): $(OUT_DIR)/$(OBJS)
 	@echo " [LINK] $@"
 	@$(CXX) $(LDFLAGS) $+ $(LDLIBS) -o $(OUT_DIR)/$@
 
-
-$(OUT_DIR)/$(OBJDIR)/%.o: %.c
-	@echo " [Compile] $<"
+CREATE_DIR:
 	@mkdir -p $(OUT_DIR)/$(OBJDIR)
+
+$(OUT_DIR)/$(OBJDIR)/%.o: %.c CREATE_DIR
+	@echo " [Compile] $<"
 	@$(CC) $(CFLAGS) -o $@ -c $<
 
 

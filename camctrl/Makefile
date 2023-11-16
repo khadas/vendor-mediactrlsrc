@@ -29,9 +29,11 @@ $(TARGET): $(OUT_DIR)/$(OBJS)
 	@echo " [LINK] $@"
 	@$(CXX) $(LDFLAGS) $+ $(LDLIBS) -o $(OUT_DIR)/$@
 
-$(OUT_DIR)/$(OBJDIR)/%.o: %.cc
-	@echo " [CC] $<"
+CREATE_DIR:
 	@mkdir -p $(OUT_DIR)/$(OBJDIR)
+
+$(OUT_DIR)/$(OBJDIR)/%.o: %.cc CREATE_DIR
+	@echo " [CC] $<"
 	@$(CC) $(CFLAGS) -o $@ -c $<
 
 .PHONY:clean
