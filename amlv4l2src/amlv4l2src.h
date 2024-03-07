@@ -37,4 +37,3 @@ int aml_v4l2src_connect(char** devname);
 void aml_v4l2src_disconnect();
 void aml_v4l2src_streamon();
 void aml_v4l2src_streamoff();
-int get_default_tvin_port(const char** devname);
