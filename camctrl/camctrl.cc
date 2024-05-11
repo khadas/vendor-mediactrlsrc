@@ -59,6 +59,7 @@
 // #define PRINT_FPS
 
 static int connected_sockfd = -1;
+static int listen_fd = -1;
 
 static char *media_device_name = NULL;
 static const char *server_socket = DEFAULT_SERVER_SOCKET0;
@@ -755,7 +756,6 @@ static void isp_alg_process_one(struct thread_param *tparam) {
     return;
   }
 
-  log_debug("process one frame successfully");
   return;
 }
 
@@ -848,9 +848,14 @@ static void *process_socket_thread(void *arg) {
   while (true) {
     if (check_fd(connected_sockfd, 0) == 0) {
       r = TEMP_FAILURE_RETRY(recv(connected_sockfd, recv_buffer, sizeof(recv_buffer), 0));
-      if (r == 0) {
-        log_debug("connection interrupted");
-        continue;
+
+      if ((r == 0) || (r == -1L) || (strcmp("streamoff", recv_buffer) == 0)) {
+        pthread_mutex_lock(&tparam->mutex);
+        tparam->streaming = false;
+        pthread_cond_signal(&tparam->cond);
+        pthread_mutex_unlock(&tparam->mutex);
+        log_debug("receive streamoff notification or TEMP_FAILURE_RETRY 0/-1L :%d",r);
+        break;
       }
       if (strcmp("streamon", recv_buffer) == 0) {
         pthread_mutex_lock(&tparam->mutex);
@@ -858,13 +863,6 @@ static void *process_socket_thread(void *arg) {
         pthread_cond_signal(&tparam->cond);
         pthread_mutex_unlock(&tparam->mutex);
         log_debug("receive streamon notification");
-      } else if (strcmp("streamoff", recv_buffer) == 0) {
-        pthread_mutex_lock(&tparam->mutex);
-        tparam->streaming = false;
-        pthread_cond_signal(&tparam->cond);
-        pthread_mutex_unlock(&tparam->mutex);
-        log_debug("receive streamoff notification");
-        break;
       } else {
         log_warn("not supported message ...");
         continue;
@@ -905,22 +903,27 @@ static void parse_opt(int argc, char *argv[]) {
 
 static void Signalhandler(int sig)
 {
+  log_debug("enter camctrl Signalhandler: %d",sig);
+
   char streamoff_buffer[32] = {0};
   strcpy(streamoff_buffer, "streamoff_done");
   int r = TEMP_FAILURE_RETRY(send(connected_sockfd, streamoff_buffer, strlen(streamoff_buffer), 0));
   if (r < 0) {
     log_error("send streamoff_buffer, failed");
   }
-  log_debug("enter camctrl Signalhandler: %d",sig);
-  unlink(server_socket);
+
+  close(listen_fd);
   close(connected_sockfd);
+  unlink(server_socket);
+
   log_debug("exit camctrl Signalhandler: %d",sig);
   exit(0);
 }
 
 int main(int argc, char *argv[]) {
-  signal(SIGINT, Signalhandler);
+  signal(SIGINT, SIG_IGN); // Ignore the SIGINT signal
   signal(SIGTERM, Signalhandler);
+  // signal(SIGTERM, SIG_IGN); // Ignore the SIGTERM signal
 
   log_debug("[%s:%s:%d]\n", __FILE__, __func__, __LINE__);
 
@@ -952,7 +955,7 @@ int main(int argc, char *argv[]) {
    **/
   struct sockaddr_un server_unix, client_unix;
   socklen_t client_unix_len;
-  int listen_fd, connfd, size;
+  int size;
 
   if ((listen_fd = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
     log_error("socket error");
@@ -977,11 +980,10 @@ int main(int argc, char *argv[]) {
   log_debug("Accepting connections ...");
 
   client_unix_len = sizeof(client_unix);
-  if ((connfd = accept(listen_fd, (struct sockaddr *)&client_unix, &client_unix_len)) < 0) {
+  if ((connected_sockfd = accept(listen_fd, (struct sockaddr *)&client_unix, &client_unix_len)) < 0) {
     log_error("accept error");
     return -1;
   }
-  connected_sockfd = connfd;
   log_debug("connected_sockfd: %d", connected_sockfd);
 
   char video_dev_name[32] = {0};
@@ -1013,9 +1015,11 @@ int main(int argc, char *argv[]) {
   if (m < 0) {
     log_error("send streamoff_buffer, failed");
   }
-  unlink(server_socket);
-  close(connected_sockfd);
+
   close(listen_fd);
+  close(connected_sockfd);
+  unlink(server_socket);
+
   log_debug("camctrl exit");
   return 0;
 }
